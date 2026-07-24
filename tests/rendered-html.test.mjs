@@ -25,6 +25,8 @@ test("server-renders the Canadian payroll calculator", async () => {
   assert.match(html, /Province comparison/);
   assert.match(html, /Same pay\. Different province\./);
   assert.match(html, /Compare with/);
+  assert.match(html, /Gross → Net/);
+  assert.match(html, /Net → Gross/);
   assert.match(html, /2026 rules/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });

@@ -71,6 +71,12 @@ a { color: inherit; }
 }
 .section-heading h2 { margin: 0; font: 600 25px Georgia, serif; letter-spacing: -.025em; }
 .section-heading p, .section-heading small { margin: 3px 0 0; display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: -2px 0 24px; padding: 5px; border-radius: 11px; background: #eceee9; }
+.mode-switch button { padding: 11px 14px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #6f7974; cursor: pointer; text-align: left; transition: background .2s, border-color .2s, color .2s, box-shadow .2s; }
+.mode-switch button b { display: block; font-size: 12px; }
+.mode-switch button small { display: block; margin-top: 3px; font-size: 9px; }
+.mode-switch button.active { border-color: #d6dbd6; background: white; color: var(--ink); box-shadow: 0 2px 8px rgba(34,49,42,.08); }
+.mode-switch button.active b { color: var(--green); }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 16px; }
 label { display: flex; flex-direction: column; gap: 8px; color: #3d4844; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
 select, .money-input {
@@ -189,6 +195,7 @@ footer b { color: #39453f; }
   .workspace { width: calc(100% - 24px); border-radius: 13px; }
   .form-panel, .results-panel { padding: 28px 22px; }
   .field-grid, .td-card .field-grid { grid-template-columns: 1fr; }
+  .mode-switch button { padding: 10px; }
   .td-card .field-grid label:last-child { grid-column: auto; max-width: none; }
   .checks { grid-template-columns: 1fr; }
   .results-top strong { font-size: 42px; }

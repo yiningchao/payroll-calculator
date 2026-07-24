@@ -9,6 +9,7 @@ type Province = {
   brackets: Bracket[];
 };
 type PayrollResult = {
+  grossPay: number;
   taxablePay: number;
   annualGross: number;
   cpp: number;
@@ -73,7 +74,8 @@ function progressiveTax(income: number, brackets: Bracket[]) {
 function ontarioAdjustments(baseTax: number, income: number) {
   const surtax = Math.max(0, baseTax - 5_818) * .2 + Math.max(0, baseTax - 7_446) * .36;
   let health = 0;
-  if (income > 20_000 && income <= 36_000) health = Math.min(300, (income - 20_000) * .06);
+  if (income <= 20_000) health = 0;
+  else if (income <= 36_000) health = Math.min(300, (income - 20_000) * .06);
   else if (income <= 48_000) health = 300;
   else if (income <= 72_000) health = Math.min(450, 300 + (income - 48_000) * .06);
   else if (income <= 200_000) health = 750;
@@ -87,10 +89,12 @@ function bcReduction(income: number, tax: number) {
 }
 
 export default function Home() {
+  const [calculationMode, setCalculationMode] = useState<"grossToNet" | "netToGross">("grossToNet");
   const [province, setProvince] = useState("AB");
   const [comparisonProvince, setComparisonProvince] = useState("ON");
   const [frequency, setFrequency] = useState(26);
   const [gross, setGross] = useState("3000");
+  const [targetNet, setTargetNet] = useState("2300");
   const [benefits, setBenefits] = useState("0");
   const [rrsp, setRrsp] = useState("0");
   const [otherDeductions, setOtherDeductions] = useState("0");
@@ -113,8 +117,8 @@ export default function Home() {
   };
 
   const resultSet = useMemo(() => {
-    const calculate = (provinceCode: string, claimAmount: string) => {
-      const taxablePay = num(gross) + num(benefits);
+    const calculate = (provinceCode: string, claimAmount: string, grossPay: number): PayrollResult => {
+      const taxablePay = grossPay + num(benefits);
       const annualGross = taxablePay * frequency;
       const annualTaxable = Math.max(0, (taxablePay - num(rrsp)) * frequency);
       const isQuebec = provinceCode === "QC";
@@ -148,8 +152,9 @@ export default function Home() {
       const provincialTax = round(annualProvincial / frequency);
       const extra = num(additionalTax);
       const totalDeductions = round(cpp + ei + qpip + federalTax + provincialTax + extra + num(rrsp) + num(otherDeductions));
-      const net = round(num(gross) - totalDeductions);
+      const net = round(grossPay - totalDeductions);
       return {
+        grossPay,
         taxablePay,
         annualGross,
         cpp,
@@ -160,20 +165,43 @@ export default function Home() {
         extra,
         totalDeductions,
         net,
-        employerCost: round(num(gross) + cpp + ei * 1.4 + qpip * 1.4),
+        employerCost: round(grossPay + cpp + ei * 1.4 + qpip * 1.4),
         effectiveRate: taxablePay ? totalDeductions / taxablePay : 0,
       };
     };
-    return {
-      primary: calculate(province, provincialClaim),
-      comparison: calculate(comparisonProvince, comparisonClaim),
+
+    const grossUp = (provinceCode: string, claimAmount: string) => {
+      const target = num(targetNet);
+      let low = 0;
+      let high = Math.max(1_000, target * 2);
+      while (calculate(provinceCode, claimAmount, high).net < target && high < 10_000_000) high *= 2;
+      for (let step = 0; step < 60; step += 1) {
+        const midpoint = (low + high) / 2;
+        if (calculate(provinceCode, claimAmount, midpoint).net < target) low = midpoint;
+        else high = midpoint;
+      }
+      return calculate(provinceCode, claimAmount, Math.ceil(high * 100) / 100);
     };
-  }, [province, comparisonProvince, frequency, gross, benefits, rrsp, otherDeductions, federalClaim, provincialClaim, comparisonClaim, additionalTax, multipleEmployers, cppExempt, eiExempt]);
+
+    if (calculationMode === "netToGross") {
+      return {
+        primary: grossUp(province, provincialClaim),
+        comparison: grossUp(comparisonProvince, comparisonClaim),
+      };
+    }
+    return {
+      primary: calculate(province, provincialClaim, num(gross)),
+      comparison: calculate(comparisonProvince, comparisonClaim, num(gross)),
+    };
+  }, [calculationMode, province, comparisonProvince, frequency, gross, targetNet, benefits, rrsp, otherDeductions, federalClaim, provincialClaim, comparisonClaim, additionalTax, multipleEmployers, cppExempt, eiExempt]);
 
   const results = resultSet.primary;
   const comparison = resultSet.comparison;
-  const netDifference = round(results.net - comparison.net);
-  const comparisonWinner = netDifference >= 0 ? province : comparisonProvince;
+  const isGrossUp = calculationMode === "netToGross";
+  const comparisonDifference = round(isGrossUp ? results.grossPay - comparison.grossPay : results.net - comparison.net);
+  const comparisonWinner = isGrossUp
+    ? (comparisonDifference <= 0 ? province : comparisonProvince)
+    : (comparisonDifference >= 0 ? province : comparisonProvince);
 
   const rows = [
     { label: province === "QC" ? "QPP + QPP2" : "CPP + CPP2", value: results.cpp, tone: "blue" },
@@ -187,7 +215,7 @@ export default function Home() {
   ];
 
   const reset = () => {
-    setProvince("AB"); setComparisonProvince("ON"); setFrequency(26); setGross("3000"); setBenefits("0"); setRrsp("0");
+    setCalculationMode("grossToNet"); setProvince("AB"); setComparisonProvince("ON"); setFrequency(26); setGross("3000"); setTargetNet("2300"); setBenefits("0"); setRrsp("0");
     setOtherDeductions("0"); setFederalClaim("16452"); setProvincialClaim("22769");
     setComparisonClaim("12989");
     setAdditionalTax("0"); setMultipleEmployers(false); setCppExempt(false); setEiExempt(false);
@@ -206,7 +234,7 @@ export default function Home() {
       <section className="hero" id="top">
         <div className="eyebrow">Canada payroll estimator</div>
         <h1>Your paycheque,<br /><em>made clear.</em></h1>
-        <p>Turn gross pay and your TD1 claims into an easy-to-read estimate of taxes, contributions, and take-home pay.</p>
+        <p>Calculate take-home pay from gross earnings—or gross up the pay required for a target net amount—using your TD1 claims.</p>
       </section>
 
       <section className="workspace" aria-label="Payroll calculator">
@@ -214,6 +242,15 @@ export default function Home() {
           <div className="section-heading">
             <span>01</span>
             <div><h2>Pay details</h2><p>What this pay period looks like</p></div>
+          </div>
+
+          <div className="mode-switch" role="group" aria-label="Calculation direction">
+            <button type="button" aria-pressed={calculationMode === "grossToNet"} className={calculationMode === "grossToNet" ? "active" : ""} onClick={() => setCalculationMode("grossToNet")}>
+              <b>Gross → Net</b><small>Calculate take-home pay</small>
+            </button>
+            <button type="button" aria-pressed={calculationMode === "netToGross"} className={calculationMode === "netToGross" ? "active" : ""} onClick={() => setCalculationMode("netToGross")}>
+              <b>Net → Gross</b><small>Gross up a target net</small>
+            </button>
           </div>
 
           <div className="field-grid">
@@ -240,7 +277,9 @@ export default function Home() {
                 {FREQUENCIES.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
               </select>
             </label>
-            <MoneyField label="Gross cash pay" value={gross} onChange={setGross} />
+            {isGrossUp
+              ? <MoneyField label="Target take-home pay" value={targetNet} onChange={setTargetNet} hint="The cash amount the employee should receive." />
+              : <MoneyField label="Gross cash pay" value={gross} onChange={setGross} />}
             <MoneyField label="Taxable benefits" value={benefits} onChange={setBenefits} hint="Benefits add to taxable income, not cash pay." />
             <MoneyField label="RRSP / RPP deduction" value={rrsp} onChange={setRrsp} hint="Deducted before income tax." />
             <MoneyField label="Other after-tax deductions" value={otherDeductions} onChange={setOtherDeductions} />
@@ -279,21 +318,23 @@ export default function Home() {
         <aside className="results-panel" aria-live="polite">
           <div className="results-top">
             <div>
-              <span className="result-label">Province comparison</span>
-              <h2>Same pay. Different province.</h2>
+              <span className="result-label">{isGrossUp ? "Gross-up comparison" : "Province comparison"}</span>
+              <h2>{isGrossUp ? "Target net. Required gross." : "Same pay. Different province."}</h2>
               <small>Estimated per {FREQUENCIES.find((item) => item.value === frequency)?.label.toLowerCase()} pay</small>
             </div>
           </div>
 
           <div className="compare-cards">
-            <ComparisonCard code={province} result={results} label="Primary" />
-            <ComparisonCard code={comparisonProvince} result={comparison} label="Comparison" />
+            <ComparisonCard code={province} result={results} label="Primary" grossUp={isGrossUp} />
+            <ComparisonCard code={comparisonProvince} result={comparison} label="Comparison" grossUp={isGrossUp} />
           </div>
 
           <div className="difference-banner">
-            <span>{netDifference === 0 ? "Equal take-home pay" : `${PROVINCES[comparisonWinner].name} comes out ahead`}</span>
-            <b>{netDifference === 0 ? money.format(0) : `${money.format(Math.abs(netDifference))} / pay`}</b>
-            <small>{netDifference === 0 ? "with these inputs" : `${money.format(Math.abs(netDifference) * frequency)} more annualized`}</small>
+            <span>{comparisonDifference === 0
+              ? (isGrossUp ? "Equal gross pay required" : "Equal take-home pay")
+              : `${PROVINCES[comparisonWinner].name} ${isGrossUp ? "requires less gross" : "comes out ahead"}`}</span>
+            <b>{comparisonDifference === 0 ? money.format(0) : `${money.format(Math.abs(comparisonDifference))} / pay`}</b>
+            <small>{comparisonDifference === 0 ? "with these inputs" : `${money.format(Math.abs(comparisonDifference) * frequency)} difference annualized`}</small>
           </div>
 
           <div className="breakdown">
@@ -307,7 +348,7 @@ export default function Home() {
           </div>
 
           <div className="annual-card">
-            <div><span>Annualized gross</span><b>{compactMoney.format(results.annualGross)}</b></div>
+            <div><span>{isGrossUp ? "Required annual cash gross" : "Annualized gross"}</span><b>{compactMoney.format(results.grossPay * frequency)}</b></div>
             <div><span>Estimated employer cost</span><b>{money.format(results.employerCost)}</b></div>
           </div>
 
@@ -344,7 +385,7 @@ function MoneyField({ label, value, onChange, hint }: { label: string; value: st
   );
 }
 
-function ComparisonCard({ code, result, label }: { code: string; result: PayrollResult; label: string }) {
+function ComparisonCard({ code, result, label, grossUp }: { code: string; result: PayrollResult; label: string; grossUp: boolean }) {
   return (
     <article className="compare-card">
       <div className="compare-card-head">
@@ -352,9 +393,10 @@ function ComparisonCard({ code, result, label }: { code: string; result: Payroll
         <small>{Math.round(result.effectiveRate * 100)}% deducted</small>
       </div>
       <h3>{PROVINCES[code].name}</h3>
-      <strong>{money.format(result.net)}</strong>
-      <span className="take-home-label">take-home pay</span>
+      <strong>{money.format(grossUp ? result.grossPay : result.net)}</strong>
+      <span className="take-home-label">{grossUp ? "required gross pay" : "take-home pay"}</span>
       <dl>
+        {grossUp && <div><dt>Target take-home</dt><dd>{money.format(result.net)}</dd></div>}
         <div><dt>Total deductions</dt><dd>{money.format(result.totalDeductions)}</dd></div>
         <div><dt>Income tax</dt><dd>{money.format(result.federalTax + result.provincialTax)}</dd></div>
         <div><dt>{code === "QC" ? "QPP, EI & QPIP" : "CPP & EI"}</dt><dd>{money.format(result.cpp + result.ei + result.qpip)}</dd></div>
