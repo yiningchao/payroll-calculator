@@ -93,6 +93,17 @@ input::-webkit-inner-spin-button { display: none; }
 .chevron { font-size: 22px; transition: transform .2s; }
 .chevron.open { transform: rotate(180deg); }
 .td-card { padding: 20px; background: #f7f7f4; border: 1px solid #dedfda; border-radius: 9px; }
+.earnings-builder { margin: 0 0 28px; padding: 22px 20px 20px; background: #fafaf8; border: 1px solid #dedfda; border-radius: 9px; }
+.earnings-builder .section-heading { margin-bottom: 20px; }
+.earnings-builder .single-check { grid-template-columns: 1fr; }
+.earnings-builder .final-fields { margin-top: 18px; }
+.earnings-summary { margin-top: 20px; display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid #d8dbd8; border-radius: 8px; overflow: hidden; background: white; }
+.earnings-summary div { padding: 11px 13px; display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #e4e6e4; font-size: 10px; }
+.earnings-summary div:nth-child(odd) { border-right: 1px solid #e4e6e4; }
+.earnings-summary span { color: var(--muted); }
+.earnings-summary b { font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.earnings-summary .earnings-total { grid-column: 1 / -1; border: 0; border-right: 0; background: #eceeec; font-size: 11px; }
+.legal-hint { margin: 13px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .uk-settings { margin-top: 34px; padding: 22px 20px 20px; background: #f7f7f4; border: 1px solid #dedfda; border-radius: 9px; }
 .uk-settings .section-heading { margin-bottom: 20px; }
 .uk-settings .field-grid label:first-child { grid-column: 1 / -1; }
@@ -139,6 +150,12 @@ input::-webkit-inner-spin-button { display: none; }
 .difference-banner span { align-self: end; font-size: 10px; font-weight: 800; }
 .difference-banner b { grid-row: 1 / span 2; grid-column: 2; align-self: center; font: 700 16px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .difference-banner small { font-size: 8px; color: #626a65; }
+.earnings-card { margin: 18px 0 0; padding: 15px 16px; border: 1px solid #d5d8d6; border-radius: 9px; background: #ffffff; }
+.earnings-card-head, .earnings-card > div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 9px; }
+.earnings-card .earnings-card-head { margin-bottom: 5px; padding-bottom: 9px; border-bottom: 1px solid #e0e2e0; font-size: 11px; }
+.earnings-card span, .earnings-card small { color: var(--muted); }
+.earnings-card b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.earnings-card small { display: block; margin-top: 8px; font-size: 8px; }
 
 .pay-flow { padding: 24px 0; border-bottom: 1px solid rgba(255,255,255,.15); display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
 .pay-flow div { display: flex; flex-direction: column; gap: 5px; }
@@ -174,7 +191,7 @@ input::-webkit-inner-spin-button { display: none; }
 footer { max-width: 1060px; margin: 0 auto; padding: 0 28px 60px; display: flex; justify-content: space-between; gap: 40px; color: var(--muted); font-size: 10px; line-height: 1.55; }
 footer p { max-width: 620px; margin: 0; }
 footer b { color: #39453f; }
-.source-links { display: flex; gap: 16px; white-space: nowrap; }
+.source-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; }
 .source-links a { color: #52665d; font-weight: 700; text-underline-offset: 3px; }
 
 @media (max-width: 850px) {
@@ -194,6 +211,9 @@ footer b { color: #39453f; }
   .workspace { width: calc(100% - 24px); border-radius: 13px; }
   .form-panel, .results-panel { padding: 28px 22px; }
   .field-grid, .td-card .field-grid { grid-template-columns: 1fr; }
+  .earnings-summary { grid-template-columns: 1fr; }
+  .earnings-summary div:nth-child(odd) { border-right: 0; }
+  .earnings-summary .earnings-total { grid-column: auto; }
   .country-switch button, .mode-switch button { padding: 10px; }
   .td-card .field-grid label:last-child { grid-column: auto; max-width: none; }
   .checks { grid-template-columns: 1fr; }

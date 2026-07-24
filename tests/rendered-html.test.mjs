@@ -23,6 +23,11 @@ test("server-renders the Canada and UK payroll calculator", async () => {
   assert.match(html, /Canada &amp; UK payroll estimator/);
   assert.match(html, /United Kingdom/);
   assert.match(html, /2026–27 tax year/);
+  assert.match(html, /Salary, overtime &amp; final pay/);
+  assert.match(html, /Regular pay basis/);
+  assert.match(html, /Eligible overtime hours/);
+  assert.match(html, /Vacation pay treatment/);
+  assert.match(html, /This is a final pay/);
   assert.match(html, /TD1 personal tax credits/);
   assert.match(html, /Province comparison/);
   assert.match(html, /Same pay\. Different province\./);

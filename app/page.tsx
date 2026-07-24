@@ -42,6 +42,21 @@ type UKPayrollResult = {
 type UKRegion = "rUK" | "SCT";
 type UKTaxBasis = "standard" | "basic" | "higher" | "advanced" | "top" | "none";
 type NICategory = "A" | "B" | "C" | "J";
+type PayBasis = "period" | "annual" | "hourly";
+type VacationMode = "none" | "eachPay" | "final";
+type EarningsBreakdown = {
+  regular: number;
+  overtime: number;
+  vacation: number;
+  notice: number;
+  terminationTaxable: number;
+  terminationTaxFree: number;
+  taxableGross: number;
+  totalGross: number;
+  hourlyRate: number;
+  weeklyRate: number;
+  vacationRate: number;
+};
 
 const FEDERAL: Bracket[] = [
   [58_523, 0.14],
@@ -101,6 +116,45 @@ const STUDENT_LOAN_PERIOD_THRESHOLDS: Record<string, [number, number]> = {
   "2": [565.09, 2_448.75],
   "4": [649.90, 2_816.25],
   "5": [480.76, 2_083.33],
+};
+
+const VACATION_RULES: Record<string, { threshold: number; low: number; high: number; label: string }> = {
+  AB: { threshold: 5, low: .04, high: .06, label: "4% under 5 years · 6% from 5 years" },
+  BC: { threshold: 5, low: .04, high: .06, label: "4% under 5 years · 6% from 5 years" },
+  MB: { threshold: 5, low: .04, high: .06, label: "4% under 5 years · 6% from 5 years" },
+  NB: { threshold: 8, low: .04, high: .06, label: "4% under 8 years · 6% from 8 years" },
+  NL: { threshold: 15, low: .04, high: .06, label: "4% under 15 years · 6% from 15 years" },
+  NS: { threshold: 8, low: .04, high: .06, label: "4% under 8 years · 6% from 8 years" },
+  ON: { threshold: 5, low: .04, high: .06, label: "4% under 5 years · 6% from 5 years" },
+  PE: { threshold: 8, low: .04, high: .06, label: "4% under 8 years · 6% from 8 years" },
+  QC: { threshold: 3, low: .04, high: .06, label: "4% under 3 years · 6% from 3 years" },
+  SK: { threshold: 10, low: 3 / 52, high: 4 / 52, label: "3/52 under 10 years · 4/52 from 10 years" },
+  NT: { threshold: 5, low: .04, high: .06, label: "4% first 5 years · 6% from year 6" },
+  NU: { threshold: 5, low: .04, high: .06, label: "4% first 5 years · 6% from year 6" },
+  YT: { threshold: Infinity, low: .04, high: .04, label: "At least 4% of gross wages" },
+};
+
+const FINAL_PAY_HINTS: Record<string, string> = {
+  AB: "Final earnings: within 10 days after the pay period ends or 31 days after the last day.",
+  BC: "Final wages: generally within 48 hours after employer termination or 6 days after resignation.",
+  ON: "Final wages: the later of 7 days after employment ends or the next regular payday.",
+  SK: "Final wages: generally within 14 days after employment ends.",
+};
+
+const EMPLOYMENT_LINKS: Record<string, string> = {
+  AB: "https://www.alberta.ca/employment-standards",
+  BC: "https://www2.gov.bc.ca/gov/content/employment-business/employment-standards-advice/employment-standards",
+  MB: "https://www.gov.mb.ca/labour/standards/",
+  NB: "https://www2.gnb.ca/content/gnb/en/corporate/promo/employment-standards.html",
+  NL: "https://www.gov.nl.ca/ecc/labour/nonunion/",
+  NS: "https://novascotia.ca/lae/employmentrights/",
+  ON: "https://www.ontario.ca/document/your-guide-employment-standards-act-0",
+  PE: "https://www.princeedwardisland.ca/en/topic/employment-standards",
+  QC: "https://www.cnesst.gouv.qc.ca/en/working-conditions",
+  SK: "https://www.saskatchewan.ca/business/employment-standards",
+  NT: "https://www.ece.gov.nt.ca/en/services/employment-standards",
+  NU: "https://nu-lsco.ca/",
+  YT: "https://yukon.ca/en/employment/employment-standards",
 };
 
 function progressiveTax(income: number, brackets: Bracket[]) {
@@ -181,6 +235,22 @@ export default function Home() {
   const [studentLoanPlan, setStudentLoanPlan] = useState("none");
   const [postgraduateLoan, setPostgraduateLoan] = useState(false);
   const [salarySacrifice, setSalarySacrifice] = useState("0");
+  const [payBasis, setPayBasis] = useState<PayBasis>("period");
+  const [annualSalary, setAnnualSalary] = useState("78000");
+  const [hourlyRate, setHourlyRate] = useState("35");
+  const [weeklyHours, setWeeklyHours] = useState("40");
+  const [regularHours, setRegularHours] = useState("80");
+  const [overtimeHours, setOvertimeHours] = useState("0");
+  const [ukOvertimeMultiplier, setUkOvertimeMultiplier] = useState("1");
+  const [yearsService, setYearsService] = useState("1");
+  const [vacationMode, setVacationMode] = useState<VacationMode>("none");
+  const [vacationEarnings, setVacationEarnings] = useState("0");
+  const [vacationPaid, setVacationPaid] = useState("0");
+  const [unusedHolidayDays, setUnusedHolidayDays] = useState("0");
+  const [holidayDailyRate, setHolidayDailyRate] = useState("0");
+  const [finalPay, setFinalPay] = useState(false);
+  const [noticeWeeks, setNoticeWeeks] = useState("0");
+  const [terminationAmount, setTerminationAmount] = useState("0");
 
   const chooseProvince = (code: string) => {
     if (code === comparisonProvince) {
@@ -200,6 +270,59 @@ export default function Home() {
     setCountry(nextCountry);
     if (nextCountry === "UK" && frequency === 24) setFrequency(12);
   };
+
+  const earnings = useMemo<EarningsBreakdown>(() => {
+    const annual = num(annualSalary);
+    const hoursPerWeek = Math.max(1, num(weeklyHours));
+    const hoursThisPay = num(regularHours);
+    const derivedHourly = payBasis === "annual"
+      ? annual / (hoursPerWeek * 52)
+      : payBasis === "hourly"
+        ? num(hourlyRate)
+        : num(gross) / Math.max(1, hoursThisPay);
+    const regular = payBasis === "annual"
+      ? annual / frequency
+      : payBasis === "hourly"
+        ? derivedHourly * hoursThisPay
+        : num(gross);
+    const overtimeMultiplier = country === "CA" ? 1.5 : Math.max(0, num(ukOvertimeMultiplier));
+    const overtime = derivedHourly * num(overtimeHours) * overtimeMultiplier;
+    const canadaVacationRule = VACATION_RULES[province];
+    const canadaVacationRate = num(yearsService) >= canadaVacationRule.threshold
+      ? canadaVacationRule.high
+      : canadaVacationRule.low;
+    const vacationRate = country === "CA" ? canadaVacationRate : .1207;
+    let vacation = 0;
+    if (vacationMode === "eachPay") vacation = (regular + overtime) * vacationRate;
+    if (vacationMode === "final") {
+      vacation = country === "CA"
+        ? Math.max(0, num(vacationEarnings) * vacationRate - num(vacationPaid))
+        : num(unusedHolidayDays) * (num(holidayDailyRate) || derivedHourly * (hoursPerWeek / 5));
+    }
+    const weeklyRate = payBasis === "annual"
+      ? annual / 52
+      : derivedHourly * hoursPerWeek;
+    const notice = finalPay ? weeklyRate * num(noticeWeeks) : 0;
+    const termination = finalPay ? num(terminationAmount) : 0;
+    const terminationTaxFree = country === "UK" ? Math.min(30_000, termination) : 0;
+    const terminationTaxable = country === "UK" ? Math.max(0, termination - 30_000) : termination;
+    const taxableGross = round(regular + overtime + vacation + notice + terminationTaxable);
+    return {
+      regular: round(regular),
+      overtime: round(overtime),
+      vacation: round(vacation),
+      notice: round(notice),
+      terminationTaxable: round(terminationTaxable),
+      terminationTaxFree: round(terminationTaxFree),
+      taxableGross,
+      totalGross: round(taxableGross + terminationTaxFree),
+      hourlyRate: round(derivedHourly),
+      weeklyRate: round(weeklyRate),
+      vacationRate,
+    };
+  }, [annualSalary, weeklyHours, regularHours, payBasis, hourlyRate, gross, frequency, country, ukOvertimeMultiplier, overtimeHours, province, yearsService, vacationMode, vacationEarnings, vacationPaid, unusedHolidayDays, holidayDailyRate, finalPay, noticeWeeks, terminationAmount]);
+
+  const payrollGross = calculationMode === "grossToNet" ? earnings.taxableGross : num(gross);
 
   const canadaResultSet = useMemo(() => {
     const calculate = (provinceCode: string, claimAmount: string, grossPay: number): PayrollResult => {
@@ -275,10 +398,10 @@ export default function Home() {
       };
     }
     return {
-      primary: calculate(province, provincialClaim, num(gross)),
-      comparison: calculate(comparisonProvince, comparisonClaim, num(gross)),
+      primary: calculate(province, provincialClaim, payrollGross),
+      comparison: calculate(comparisonProvince, comparisonClaim, payrollGross),
     };
-  }, [calculationMode, province, comparisonProvince, frequency, gross, targetNet, benefits, rrsp, otherDeductions, federalClaim, provincialClaim, comparisonClaim, additionalTax, multipleEmployers, cppExempt, eiExempt]);
+  }, [calculationMode, province, comparisonProvince, frequency, payrollGross, targetNet, benefits, rrsp, otherDeductions, federalClaim, provincialClaim, comparisonClaim, additionalTax, multipleEmployers, cppExempt, eiExempt]);
 
   const ukResultSet = useMemo(() => {
     const calculate = (region: UKRegion, grossPay: number): UKPayrollResult => {
@@ -350,11 +473,22 @@ export default function Home() {
     if (calculationMode === "netToGross") {
       return { primary: grossUp(ukRegion), comparison: grossUp(ukComparisonRegion) };
     }
-    return {
-      primary: calculate(ukRegion, num(gross)),
-      comparison: calculate(ukComparisonRegion, num(gross)),
+    const addTaxFreeFinalPay = (result: UKPayrollResult) => {
+      if (!earnings.terminationTaxFree) return result;
+      const grossPay = round(result.grossPay + earnings.terminationTaxFree);
+      return {
+        ...result,
+        grossPay,
+        net: round(result.net + earnings.terminationTaxFree),
+        employerCost: round(result.employerCost + earnings.terminationTaxFree),
+        effectiveRate: grossPay ? result.totalDeductions / grossPay : 0,
+      };
     };
-  }, [calculationMode, ukRegion, ukComparisonRegion, frequency, gross, targetNet, benefits, salarySacrifice, otherDeductions, ukTaxBasis, niCategory, studentLoanPlan, postgraduateLoan]);
+    return {
+      primary: addTaxFreeFinalPay(calculate(ukRegion, payrollGross)),
+      comparison: addTaxFreeFinalPay(calculate(ukComparisonRegion, payrollGross)),
+    };
+  }, [calculationMode, ukRegion, ukComparisonRegion, frequency, payrollGross, targetNet, benefits, salarySacrifice, otherDeductions, ukTaxBasis, niCategory, studentLoanPlan, postgraduateLoan, earnings.terminationTaxFree]);
 
   const results = canadaResultSet.primary;
   const comparison = canadaResultSet.comparison;
@@ -397,6 +531,10 @@ export default function Home() {
     setAdditionalTax("0"); setMultipleEmployers(false); setCppExempt(false); setEiExempt(false);
     setUkRegion("rUK"); setUkComparisonRegion("SCT"); setUkTaxBasis("standard"); setNiCategory("A");
     setStudentLoanPlan("none"); setPostgraduateLoan(false); setSalarySacrifice("0");
+    setPayBasis("period"); setAnnualSalary("78000"); setHourlyRate("35"); setWeeklyHours("40"); setRegularHours("80");
+    setOvertimeHours("0"); setUkOvertimeMultiplier("1"); setYearsService("1"); setVacationMode("none");
+    setVacationEarnings("0"); setVacationPaid("0"); setUnusedHolidayDays("0"); setHolidayDailyRate("0"); setFinalPay(false);
+    setNoticeWeeks("0"); setTerminationAmount("0");
   };
 
   return (
@@ -435,6 +573,85 @@ export default function Home() {
             </button>
           </div>
 
+          {calculationMode === "grossToNet" && (
+            <section className="earnings-builder" aria-label="Earnings and final pay">
+              <div className="section-heading compact">
+                <span>02</span>
+                <span><b>Salary, overtime &amp; final pay</b><small>Build this pay period before statutory deductions</small></span>
+              </div>
+              <div className="field-grid">
+                <label>
+                  Regular pay basis
+                  <select value={payBasis} onChange={(e) => setPayBasis(e.target.value as PayBasis)}>
+                    <option value="period">Pay-period amount</option>
+                    <option value="annual">Annual salary</option>
+                    <option value="hourly">Hourly rate</option>
+                  </select>
+                </label>
+                {payBasis === "annual" && <MoneyField symbol={country === "CA" ? "$" : "£"} label="Annual salary" value={annualSalary} onChange={setAnnualSalary} />}
+                {payBasis === "hourly" && <MoneyField symbol={country === "CA" ? "$" : "£"} label="Hourly rate" value={hourlyRate} onChange={setHourlyRate} />}
+                {payBasis === "period" && <MoneyField symbol={country === "CA" ? "$" : "£"} label="Regular pay this period" value={gross} onChange={setGross} />}
+                <MoneyField symbol="" label="Contracted hours per week" value={weeklyHours} onChange={setWeeklyHours} />
+                {payBasis !== "annual" && <MoneyField symbol="" label="Regular hours this pay" value={regularHours} onChange={setRegularHours} />}
+                <MoneyField symbol="" label="Eligible overtime hours" value={overtimeHours} onChange={setOvertimeHours} hint={country === "CA" ? "Enter only hours that qualify under local rules; most eligible overtime is paid at 1.5×." : "UK overtime rates come from the contract; there is no general statutory premium."} />
+                {country === "UK" && (
+                  <label>
+                    Contract overtime multiplier
+                    <select value={ukOvertimeMultiplier} onChange={(e) => setUkOvertimeMultiplier(e.target.value)}>
+                      <option value="1">1.0× · straight time</option>
+                      <option value="1.25">1.25×</option>
+                      <option value="1.5">1.5×</option>
+                      <option value="2">2.0×</option>
+                    </select>
+                  </label>
+                )}
+                <MoneyField symbol="" label="Completed years of service" value={yearsService} onChange={setYearsService} />
+                <label>
+                  {country === "CA" ? "Vacation pay treatment" : "Holiday pay treatment"}
+                  <select value={vacationMode} onChange={(e) => setVacationMode(e.target.value as VacationMode)}>
+                    <option value="none">No additional payout this pay</option>
+                    <option value="eachPay">{country === "CA" ? "Pay statutory vacation percentage now" : "Rolled-up pay · eligible irregular/part-year only"}</option>
+                    <option value="final">{country === "CA" ? "Final accrued vacation payout" : "Pay unused holiday on leaving"}</option>
+                  </select>
+                  <small className="hint">{country === "CA" ? VACATION_RULES[province].label : "Regular workers receive 5.6 weeks; 12.07% rolled-up pay is limited to eligible irregular/part-year workers."}</small>
+                </label>
+                {vacationMode === "final" && country === "CA" && (
+                  <>
+                    <MoneyField label="Vacation-eligible wages earned" value={vacationEarnings} onChange={setVacationEarnings} />
+                    <MoneyField label="Vacation pay already paid" value={vacationPaid} onChange={setVacationPaid} />
+                  </>
+                )}
+                {vacationMode === "final" && country === "UK" && (
+                  <>
+                    <MoneyField symbol="" label="Unused holiday days" value={unusedHolidayDays} onChange={setUnusedHolidayDays} hint="Payment in lieu is required for untaken statutory leave when employment ends." />
+                    <MoneyField symbol="£" label="Average normal daily pay" value={holidayDailyRate} onChange={setHolidayDailyRate} hint="Enter normal pay including regularly paid overtime, commission or other required elements; leave 0 to use the derived basic day rate." />
+                  </>
+                )}
+              </div>
+
+              <div className="checks single-check">
+                <Check checked={finalPay} onChange={setFinalPay} label="This is a final pay" detail="Add contractual or statutory notice and termination amounts below." />
+              </div>
+              {finalPay && (
+                <div className="field-grid final-fields">
+                  <MoneyField symbol="" label="Pay in lieu · weeks" value={noticeWeeks} onChange={setNoticeWeeks} hint={country === "UK" ? "UK statutory notice is generally 1 week after one month, then 1 week per completed year from 2 to 12 years." : "Enter the applicable statutory, contractual or common-law notice period."} />
+                  <MoneyField symbol={country === "CA" ? "$" : "£"} label={country === "CA" ? "Severance / other taxable termination pay" : "Redundancy / termination award"} value={terminationAmount} onChange={setTerminationAmount} hint={country === "UK" ? "The calculator treats up to £30,000 as tax-free; PAYE treatment can vary by payment type." : "Included as taxable employment income for this estimate."} />
+                </div>
+              )}
+
+              <div className="earnings-summary">
+                <div><span>Regular</span><b>{(country === "CA" ? money : pounds).format(earnings.regular)}</b></div>
+                <div><span>Overtime</span><b>{(country === "CA" ? money : pounds).format(earnings.overtime)}</b></div>
+                <div><span>{country === "CA" ? "Vacation" : "Holiday"}</span><b>{(country === "CA" ? money : pounds).format(earnings.vacation)}</b></div>
+                <div><span>Final-pay additions</span><b>{(country === "CA" ? money : pounds).format(earnings.notice + earnings.terminationTaxable + earnings.terminationTaxFree)}</b></div>
+                <div className="earnings-total"><span>Total gross</span><b>{(country === "CA" ? money : pounds).format(earnings.totalGross)}</b></div>
+              </div>
+              <p className="legal-hint">{country === "CA"
+                ? (FINAL_PAY_HINTS[province] ?? `Final-pay timing and notice entitlements vary in ${PROVINCES[province].name}; confirm the applicable employment standards and any better contractual right.`)
+                : "UK final pay must include untaken statutory holiday. Contractual overtime controls the rate, and redundancy, notice and post-P45 payments can have different PAYE treatment."}</p>
+            </section>
+          )}
+
           {country === "CA" ? (
             <>
               <div className="field-grid">
@@ -456,9 +673,7 @@ export default function Home() {
                   </select>
                 </label>
                 <FrequencyField frequency={frequency} setFrequency={setFrequency} options={FREQUENCIES} />
-                {isGrossUp
-                  ? <MoneyField label="Target take-home pay" value={targetNet} onChange={setTargetNet} hint="The cash amount the employee should receive." />
-                  : <MoneyField label="Gross cash pay" value={gross} onChange={setGross} />}
+                {isGrossUp && <MoneyField label="Target take-home pay" value={targetNet} onChange={setTargetNet} hint="The cash amount the employee should receive." />}
                 <MoneyField label="Taxable benefits" value={benefits} onChange={setBenefits} hint="Benefits add to taxable income, not cash pay." />
                 <MoneyField label="RRSP / RPP deduction" value={rrsp} onChange={setRrsp} hint="Deducted before income tax." />
                 <MoneyField label="Other after-tax deductions" value={otherDeductions} onChange={setOtherDeductions} />
@@ -466,7 +681,7 @@ export default function Home() {
 
               <button className="accordion" type="button" onClick={() => setTdOpen(!tdOpen)} aria-expanded={tdOpen}>
                 <span className="section-heading compact">
-                  <span>02</span>
+                  <span>03</span>
                   <span><b>TD1 personal tax credits</b><small>Use the totals from your signed forms</small></span>
                 </span>
                 <span className={`chevron ${tdOpen ? "open" : ""}`}>⌄</span>
@@ -504,9 +719,7 @@ export default function Home() {
                   </select>
                 </label>
                 <FrequencyField frequency={frequency} setFrequency={setFrequency} options={UK_FREQUENCIES} />
-                {isGrossUp
-                  ? <MoneyField symbol="£" label="Target take-home pay" value={targetNet} onChange={setTargetNet} hint="The cash amount the employee should receive." />
-                  : <MoneyField symbol="£" label="Gross cash pay" value={gross} onChange={setGross} />}
+                {isGrossUp && <MoneyField symbol="£" label="Target take-home pay" value={targetNet} onChange={setTargetNet} hint="The cash amount the employee should receive." />}
                 <MoneyField symbol="£" label="Payrolled taxable benefits" value={benefits} onChange={setBenefits} hint="Included in taxable and NI-able pay for this estimate." />
                 <MoneyField symbol="£" label="Pension salary sacrifice" value={salarySacrifice} onChange={setSalarySacrifice} hint="Reduces cash pay, PAYE pay and NI pay." />
                 <MoneyField symbol="£" label="Other after-tax deductions" value={otherDeductions} onChange={setOtherDeductions} />
@@ -514,7 +727,7 @@ export default function Home() {
 
               <div className="uk-settings">
                 <div className="section-heading compact">
-                  <span>02</span>
+                  <span>03</span>
                   <span><b>UK payroll settings</b><small>Use the employee’s HMRC notices and starter details</small></span>
                 </div>
                 <div className="field-grid">
@@ -573,6 +786,8 @@ export default function Home() {
                 </div>
               </div>
 
+              {!isGrossUp && <EarningsCard earnings={earnings} format={money} vacationLabel="Vacation pay" />}
+
               <div className="compare-cards">
                 <ComparisonCard code={province} result={results} label="Primary" grossUp={isGrossUp} />
                 <ComparisonCard code={comparisonProvince} result={comparison} label="Comparison" grossUp={isGrossUp} />
@@ -589,11 +804,13 @@ export default function Home() {
               <DeductionBreakdown title={`${PROVINCES[province].name} breakdown`} total={results.totalDeductions} rows={rows} format={money} />
 
               <div className="annual-card">
-                <div><span>{isGrossUp ? "Required annual cash gross" : "Annualized gross"}</span><b>{compactMoney.format(results.grossPay * frequency)}</b></div>
+                <div><span>{isGrossUp ? "Required annual cash gross" : finalPay ? "Final gross payment" : "Annualized gross"}</span><b>{finalPay ? money.format(results.grossPay) : compactMoney.format(results.grossPay * frequency)}</b></div>
                 <div><span>Estimated employer cost</span><b>{money.format(results.employerCost)}</b></div>
               </div>
 
-              <p className="result-note">Planning estimate for regular employment income. Bonuses, year-to-date maximums, special credits, and payroll-specific situations can change the result.</p>
+              <p className="result-note">{finalPay
+                ? "Final-pay estimate only. Vacation bases, notice, severance eligibility, retiring allowances, lump-sum withholding, exemptions and common-law or contractual rights can change the amount and tax treatment."
+                : "Planning estimate for regular employment income. Bonuses, year-to-date maximums, special credits, and payroll-specific situations can change the result."}</p>
             </>
           ) : (
             <>
@@ -604,6 +821,8 @@ export default function Home() {
                   <small>2026–27 estimate per {UK_FREQUENCIES.find((item) => item.value === frequency)?.label.toLowerCase()} pay</small>
                 </div>
               </div>
+
+              {!isGrossUp && <EarningsCard earnings={earnings} format={pounds} vacationLabel="Holiday pay" />}
 
               <div className="compare-cards">
                 <UKComparisonCard region={ukRegion} result={ukResults} label="Primary" grossUp={isGrossUp} />
@@ -621,11 +840,13 @@ export default function Home() {
               <DeductionBreakdown title={`${UK_REGIONS[ukRegion]} breakdown`} total={ukResults.totalDeductions} rows={ukRows} format={pounds} />
 
               <div className="annual-card">
-                <div><span>{isGrossUp ? "Required annual cash gross" : "Annualized gross"}</span><b>{compactPounds.format(ukResults.grossPay * frequency)}</b></div>
+                <div><span>{isGrossUp ? "Required annual cash gross" : finalPay ? "Final gross payment" : "Annualized gross"}</span><b>{finalPay ? pounds.format(ukResults.grossPay) : compactPounds.format(ukResults.grossPay * frequency)}</b></div>
                 <div><span>Employer NI / cost per pay</span><b>{pounds.format(ukResults.employerNI)} / {pounds.format(ukResults.employerCost)}</b></div>
               </div>
 
-              <p className="result-note">Regular-pay estimate using the selected tax basis. Exact PAYE may differ for cumulative codes, emergency codes, year-to-date pay, directors, irregular periods, benefits not processed through payroll, or HMRC notices.</p>
+              <p className="result-note">{finalPay
+                ? "Final-pay estimate only. Notice, redundancy eligibility, post-employment notice pay, the £30,000 exemption, post-P45 code 0T treatment and the composition of termination awards can change PAYE and NI."
+                : "Regular-pay estimate using the selected tax basis. Exact PAYE may differ for cumulative codes, emergency codes, year-to-date pay, directors, irregular periods, benefits not processed through payroll, or HMRC notices."}</p>
             </>
           )}
         </aside>
@@ -644,6 +865,7 @@ export default function Home() {
             <div className="source-links">
               <a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jul/t4127-jul-payroll-deductions-formulas.html" target="_blank" rel="noreferrer">CRA T4127 ↗</a>
               <a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/td1-personal-tax-credits-returns/td1-forms-pay-received-on-january-1-later/td1.html" target="_blank" rel="noreferrer">2026 TD1 ↗</a>
+              <a href={EMPLOYMENT_LINKS[province]} target="_blank" rel="noreferrer">{PROVINCES[province].name} standards ↗</a>
               <a href="https://www.revenuquebec.ca/en/online-services/forms-and-publications/current-details/tp-1015-f-v/" target="_blank" rel="noreferrer">Quebec TP-1015.F-V ↗</a>
             </div>
           </footer>
@@ -662,6 +884,9 @@ export default function Home() {
               <a href="https://www.gov.uk/guidance/rates-and-thresholds-for-employers-2026-to-2027" target="_blank" rel="noreferrer">HMRC rates ↗</a>
               <a href="https://www.gov.uk/tax-codes/what-your-tax-code-means" target="_blank" rel="noreferrer">Tax codes ↗</a>
               <a href="https://www.gov.uk/guidance/special-rules-for-student-loans" target="_blank" rel="noreferrer">Student loans ↗</a>
+              <a href="https://www.gov.uk/holiday-entitlement-rights" target="_blank" rel="noreferrer">Holiday pay ↗</a>
+              <a href="https://www.gov.uk/overtime-your-rights" target="_blank" rel="noreferrer">Overtime ↗</a>
+              <a href="https://www.gov.uk/employee-leaving" target="_blank" rel="noreferrer">Final pay ↗</a>
             </div>
           </footer>
         </>
@@ -728,6 +953,20 @@ function UKComparisonCard({ region, result, label, grossUp }: { region: UKRegion
         <div><dt>Employee NI</dt><dd>{pounds.format(result.nationalInsurance)}</dd></div>
       </dl>
     </article>
+  );
+}
+
+function EarningsCard({ earnings, format, vacationLabel }: { earnings: EarningsBreakdown; format: Intl.NumberFormat; vacationLabel: string }) {
+  const additions = earnings.notice + earnings.terminationTaxable + earnings.terminationTaxFree;
+  return (
+    <div className="earnings-card">
+      <div className="earnings-card-head"><span>Gross earnings</span><b>{format.format(earnings.totalGross)}</b></div>
+      <div><span>Regular pay</span><b>{format.format(earnings.regular)}</b></div>
+      <div><span>Overtime pay</span><b>{format.format(earnings.overtime)}</b></div>
+      <div><span>{vacationLabel}</span><b>{format.format(earnings.vacation)}</b></div>
+      {additions > 0 && <div><span>Final-pay additions</span><b>{format.format(additions)}</b></div>}
+      <small>Derived hourly rate: {format.format(earnings.hourlyRate)}</small>
+    </div>
   );
 }
 
