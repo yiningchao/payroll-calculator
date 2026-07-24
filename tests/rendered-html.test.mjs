@@ -19,7 +19,7 @@ test("server-renders the Canadian payroll calculator", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Maple Pay/);
+  assert.match(html, /<title>Plane Pay/);
   assert.match(html, /Canada payroll estimator/);
   assert.match(html, /TD1 personal tax credits/);
   assert.match(html, /Province comparison/);
