@@ -224,16 +224,11 @@ export default function Home() {
   return (
     <main>
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Plane Pay home">
-          <span className="brand-mark">P</span>
-          <span>plane pay</span>
-        </a>
         <div className="rule-chip"><span /> 2026 rules · Updated July 1</div>
       </header>
 
       <section className="hero" id="top">
         <div className="eyebrow"><span>●</span> Canada payroll estimator</div>
-        <h1>Your paycheque,<br /><em>made clear.</em></h1>
         <p>Calculate take-home pay from gross earnings—or gross up the pay required for a target net amount—using your TD1 claims.</p>
       </section>
 

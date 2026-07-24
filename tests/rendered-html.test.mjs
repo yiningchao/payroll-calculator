@@ -19,7 +19,7 @@ test("server-renders the Canadian payroll calculator", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Plane Pay/);
+  assert.match(html, /<title>2026 Canada Payroll Calculator/);
   assert.match(html, /Canada payroll estimator/);
   assert.match(html, /TD1 personal tax credits/);
   assert.match(html, /Province comparison/);
@@ -28,5 +28,5 @@ test("server-renders the Canadian payroll calculator", async () => {
   assert.match(html, /Gross → Net/);
   assert.match(html, /Net → Gross/);
   assert.match(html, /2026 rules/);
-  assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
+  assert.doesNotMatch(html, /Plane Pay|plane pay|Your paycheque|made clear|brand-mark|codex-preview|react-loading-skeleton/);
 });
