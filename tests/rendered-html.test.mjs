@@ -13,20 +13,22 @@ async function render() {
   );
 }
 
-test("server-renders the Canadian payroll calculator", async () => {
+test("server-renders the Canada and UK payroll calculator", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>2026 Canada Payroll Calculator/);
-  assert.match(html, /Canada payroll estimator/);
+  assert.match(html, /<title>Canada &amp; UK Payroll Calculator/);
+  assert.match(html, /Canada &amp; UK payroll estimator/);
+  assert.match(html, /United Kingdom/);
+  assert.match(html, /2026–27 tax year/);
   assert.match(html, /TD1 personal tax credits/);
   assert.match(html, /Province comparison/);
   assert.match(html, /Same pay\. Different province\./);
   assert.match(html, /Compare with/);
   assert.match(html, /Gross → Net/);
   assert.match(html, /Net → Gross/);
-  assert.match(html, /2026 rules/);
+  assert.match(html, /Canada 2026 · UK 2026–27/);
   assert.doesNotMatch(html, /Plane Pay|plane pay|Your paycheque|made clear|brand-mark|codex-preview|react-loading-skeleton/);
 });

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "2026 Canada Payroll Calculator",
-  description: "Estimate Canadian take-home pay using 2026 CRA rates and your TD1 personal tax credit claims.",
+  title: "Canada & UK Payroll Calculator",
+  description: "Estimate Canadian or UK take-home pay, compare regions, or gross up a target net amount using current 2026 payroll rules.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

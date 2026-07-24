@@ -65,12 +65,14 @@ a { color: inherit; }
 }
 .section-heading h2 { margin: 0; font: 650 23px/1.1 Inter, ui-sans-serif, sans-serif; letter-spacing: -.035em; }
 .section-heading p, .section-heading small { margin: 3px 0 0; display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
-.mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: -2px 0 24px; padding: 5px; border-radius: 9px; background: #f0f1ed; }
-.mode-switch button { padding: 11px 14px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #6f7974; cursor: pointer; text-align: left; transition: background .2s, border-color .2s, color .2s, box-shadow .2s; }
-.mode-switch button b { display: block; font-size: 12px; }
-.mode-switch button small { display: block; margin-top: 3px; font-size: 9px; }
-.mode-switch button.active { border-color: #d8cce8; background: white; color: var(--ink); box-shadow: 0 2px 8px rgba(52,39,70,.08); }
-.mode-switch button.active b { color: #7550a5; }
+.country-switch, .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 5px; border-radius: 9px; background: #f0f1ed; }
+.country-switch { margin: -2px 0 12px; }
+.mode-switch { margin: 0 0 24px; }
+.country-switch button, .mode-switch button { padding: 11px 14px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #6f7974; cursor: pointer; text-align: left; transition: background .2s, border-color .2s, color .2s, box-shadow .2s; }
+.country-switch button b, .mode-switch button b { display: block; font-size: 12px; }
+.country-switch button small, .mode-switch button small { display: block; margin-top: 3px; font-size: 9px; }
+.country-switch button.active, .mode-switch button.active { border-color: #d8cce8; background: white; color: var(--ink); box-shadow: 0 2px 8px rgba(52,39,70,.08); }
+.country-switch button.active b, .mode-switch button.active b { color: #7550a5; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 16px; }
 label { display: flex; flex-direction: column; gap: 8px; color: #3d4844; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
 select, .money-input {
@@ -91,6 +93,10 @@ input::-webkit-inner-spin-button { display: none; }
 .chevron { font-size: 22px; transition: transform .2s; }
 .chevron.open { transform: rotate(180deg); }
 .td-card { padding: 20px; background: #f7f7f4; border: 1px solid #dedfda; border-radius: 9px; }
+.uk-settings { margin-top: 34px; padding: 22px 20px 20px; background: #f7f7f4; border: 1px solid #dedfda; border-radius: 9px; }
+.uk-settings .section-heading { margin-bottom: 20px; }
+.uk-settings .field-grid label:first-child { grid-column: 1 / -1; }
+.uk-settings .single-check { grid-template-columns: 1fr; max-width: calc(50% - 8px); }
 .td-card .field-grid { grid-template-columns: 1fr 1fr; }
 .td-card .field-grid label:last-child { grid-column: 1 / -1; max-width: calc(50% - 8px); }
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
@@ -174,7 +180,7 @@ footer b { color: #39453f; }
 @media (max-width: 850px) {
   .hero { padding-top: 38px; }
   .workspace { grid-template-columns: 1fr; }
-  .results-panel { min-height: auto; }
+  .results-panel { min-height: auto; border-left: 0; border-top: 1px solid var(--line); }
   .rule-strip { grid-template-columns: 1fr 1fr; }
   .rule-strip div:nth-child(3) { border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
   .rule-strip div:nth-child(4) { border-top: 1px solid var(--line); }
@@ -188,9 +194,10 @@ footer b { color: #39453f; }
   .workspace { width: calc(100% - 24px); border-radius: 13px; }
   .form-panel, .results-panel { padding: 28px 22px; }
   .field-grid, .td-card .field-grid { grid-template-columns: 1fr; }
-  .mode-switch button { padding: 10px; }
+  .country-switch button, .mode-switch button { padding: 10px; }
   .td-card .field-grid label:last-child { grid-column: auto; max-width: none; }
   .checks { grid-template-columns: 1fr; }
+  .uk-settings .single-check { max-width: none; }
   .results-top strong { font-size: 42px; }
   .compare-card { padding: 13px 11px; }
   .compare-card-head { align-items: flex-start; flex-direction: column; }
