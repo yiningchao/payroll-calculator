@@ -8,6 +8,20 @@ type Province = {
   claim: number;
   brackets: Bracket[];
 };
+type PayrollResult = {
+  taxablePay: number;
+  annualGross: number;
+  cpp: number;
+  ei: number;
+  qpip: number;
+  federalTax: number;
+  provincialTax: number;
+  extra: number;
+  totalDeductions: number;
+  net: number;
+  employerCost: number;
+  effectiveRate: number;
+};
 
 const FEDERAL: Bracket[] = [
   [58_523, 0.14],
@@ -74,6 +88,7 @@ function bcReduction(income: number, tax: number) {
 
 export default function Home() {
   const [province, setProvince] = useState("AB");
+  const [comparisonProvince, setComparisonProvince] = useState("ON");
   const [frequency, setFrequency] = useState(26);
   const [gross, setGross] = useState("3000");
   const [benefits, setBenefits] = useState("0");
@@ -81,6 +96,7 @@ export default function Home() {
   const [otherDeductions, setOtherDeductions] = useState("0");
   const [federalClaim, setFederalClaim] = useState("16452");
   const [provincialClaim, setProvincialClaim] = useState(String(PROVINCES.AB.claim));
+  const [comparisonClaim, setComparisonClaim] = useState(String(PROVINCES.ON.claim));
   const [additionalTax, setAdditionalTax] = useState("0");
   const [multipleEmployers, setMultipleEmployers] = useState(false);
   const [cppExempt, setCppExempt] = useState(false);
@@ -88,61 +104,76 @@ export default function Home() {
   const [tdOpen, setTdOpen] = useState(true);
 
   const chooseProvince = (code: string) => {
+    if (code === comparisonProvince) {
+      setComparisonProvince(province);
+      setComparisonClaim(String(PROVINCES[province].claim));
+    }
     setProvince(code);
     setProvincialClaim(String(PROVINCES[code].claim));
   };
 
-  const results = useMemo(() => {
-    const taxablePay = num(gross) + num(benefits);
-    const annualGross = taxablePay * frequency;
-    const annualTaxable = Math.max(0, (taxablePay - num(rrsp)) * frequency);
-    const isQuebec = province === "QC";
-    const pensionRate = isQuebec ? .063 : .0595;
-    const pensionBase = cppExempt ? 0 : Math.min(Math.max(annualGross - 3_500, 0), 71_100) * pensionRate;
-    const pension2 = cppExempt ? 0 : Math.min(Math.max(annualGross - 74_600, 0), 10_400) * .04;
-    const annualPension = pensionBase + pension2;
-    const annualEi = eiExempt ? 0 : Math.min(annualGross, 68_900) * (isQuebec ? .013 : .0163);
-    const annualQpip = isQuebec ? Math.min(annualGross, 103_000) * .0043 : 0;
-    const basePensionCredit = Math.min(Math.max(annualGross - 3_500, 0), 71_100) * (isQuebec ? .053 : .0495);
-    const federalCreditClaim = multipleEmployers ? 0 : num(federalClaim);
-    const provinceCreditClaim = multipleEmployers ? 0 : num(provincialClaim);
-    const federalCredits = .14 * (federalCreditClaim + 1_501 + basePensionCredit + annualEi + annualQpip);
-    let annualFederal = Math.max(0, progressiveTax(annualTaxable, FEDERAL) - federalCredits);
-    if (isQuebec) annualFederal *= .835;
+  const resultSet = useMemo(() => {
+    const calculate = (provinceCode: string, claimAmount: string) => {
+      const taxablePay = num(gross) + num(benefits);
+      const annualGross = taxablePay * frequency;
+      const annualTaxable = Math.max(0, (taxablePay - num(rrsp)) * frequency);
+      const isQuebec = provinceCode === "QC";
+      const pensionRate = isQuebec ? .063 : .0595;
+      const pensionBase = cppExempt ? 0 : Math.min(Math.max(annualGross - 3_500, 0), 71_100) * pensionRate;
+      const pension2 = cppExempt ? 0 : Math.min(Math.max(annualGross - 74_600, 0), 10_400) * .04;
+      const annualPension = pensionBase + pension2;
+      const annualEi = eiExempt ? 0 : Math.min(annualGross, 68_900) * (isQuebec ? .013 : .0163);
+      const annualQpip = isQuebec ? Math.min(annualGross, 103_000) * .0043 : 0;
+      const basePensionCredit = Math.min(Math.max(annualGross - 3_500, 0), 71_100) * (isQuebec ? .053 : .0495);
+      const federalCreditClaim = multipleEmployers ? 0 : num(federalClaim);
+      const provinceCreditClaim = multipleEmployers ? 0 : num(claimAmount);
+      const federalCredits = .14 * (federalCreditClaim + 1_501 + basePensionCredit + annualEi + annualQpip);
+      let annualFederal = Math.max(0, progressiveTax(annualTaxable, FEDERAL) - federalCredits);
+      if (isQuebec) annualFederal *= .835;
 
-    const provincial = PROVINCES[province];
-    const lowestRate = provincial.brackets[0][1];
-    let annualProvincial = Math.max(
-      0,
-      progressiveTax(annualTaxable, provincial.brackets)
-      - lowestRate * (provinceCreditClaim + basePensionCredit + annualEi + annualQpip),
-    );
-    if (province === "BC") annualProvincial -= bcReduction(annualTaxable, annualProvincial);
-    if (province === "ON") annualProvincial += ontarioAdjustments(annualProvincial, annualTaxable);
+      const selectedProvince = PROVINCES[provinceCode];
+      const lowestRate = selectedProvince.brackets[0][1];
+      let annualProvincial = Math.max(
+        0,
+        progressiveTax(annualTaxable, selectedProvince.brackets)
+        - lowestRate * (provinceCreditClaim + basePensionCredit + annualEi + annualQpip),
+      );
+      if (provinceCode === "BC") annualProvincial -= bcReduction(annualTaxable, annualProvincial);
+      if (provinceCode === "ON") annualProvincial += ontarioAdjustments(annualProvincial, annualTaxable);
 
-    const cpp = round(annualPension / frequency);
-    const ei = round(annualEi / frequency);
-    const qpip = round(annualQpip / frequency);
-    const federalTax = round(annualFederal / frequency);
-    const provincialTax = round(annualProvincial / frequency);
-    const extra = num(additionalTax);
-    const totalDeductions = round(cpp + ei + qpip + federalTax + provincialTax + extra + num(rrsp) + num(otherDeductions));
-    const net = round(num(gross) - totalDeductions);
-    return {
-      taxablePay,
-      annualGross,
-      cpp,
-      ei,
-      qpip,
-      federalTax,
-      provincialTax,
-      extra,
-      totalDeductions,
-      net,
-      employerCost: round(num(gross) + cpp + ei * 1.4 + qpip * 1.4),
-      effectiveRate: taxablePay ? totalDeductions / taxablePay : 0,
+      const cpp = round(annualPension / frequency);
+      const ei = round(annualEi / frequency);
+      const qpip = round(annualQpip / frequency);
+      const federalTax = round(annualFederal / frequency);
+      const provincialTax = round(annualProvincial / frequency);
+      const extra = num(additionalTax);
+      const totalDeductions = round(cpp + ei + qpip + federalTax + provincialTax + extra + num(rrsp) + num(otherDeductions));
+      const net = round(num(gross) - totalDeductions);
+      return {
+        taxablePay,
+        annualGross,
+        cpp,
+        ei,
+        qpip,
+        federalTax,
+        provincialTax,
+        extra,
+        totalDeductions,
+        net,
+        employerCost: round(num(gross) + cpp + ei * 1.4 + qpip * 1.4),
+        effectiveRate: taxablePay ? totalDeductions / taxablePay : 0,
+      };
     };
-  }, [province, frequency, gross, benefits, rrsp, otherDeductions, federalClaim, provincialClaim, additionalTax, multipleEmployers, cppExempt, eiExempt]);
+    return {
+      primary: calculate(province, provincialClaim),
+      comparison: calculate(comparisonProvince, comparisonClaim),
+    };
+  }, [province, comparisonProvince, frequency, gross, benefits, rrsp, otherDeductions, federalClaim, provincialClaim, comparisonClaim, additionalTax, multipleEmployers, cppExempt, eiExempt]);
+
+  const results = resultSet.primary;
+  const comparison = resultSet.comparison;
+  const netDifference = round(results.net - comparison.net);
+  const comparisonWinner = netDifference >= 0 ? province : comparisonProvince;
 
   const rows = [
     { label: province === "QC" ? "QPP + QPP2" : "CPP + CPP2", value: results.cpp, tone: "blue" },
@@ -156,8 +187,9 @@ export default function Home() {
   ];
 
   const reset = () => {
-    setProvince("AB"); setFrequency(26); setGross("3000"); setBenefits("0"); setRrsp("0");
+    setProvince("AB"); setComparisonProvince("ON"); setFrequency(26); setGross("3000"); setBenefits("0"); setRrsp("0");
     setOtherDeductions("0"); setFederalClaim("16452"); setProvincialClaim("22769");
+    setComparisonClaim("12989");
     setAdditionalTax("0"); setMultipleEmployers(false); setCppExempt(false); setEiExempt(false);
   };
 
@@ -192,6 +224,17 @@ export default function Home() {
               </select>
             </label>
             <label>
+              Compare with
+              <select value={comparisonProvince} onChange={(e) => {
+                setComparisonProvince(e.target.value);
+                setComparisonClaim(String(PROVINCES[e.target.value].claim));
+              }}>
+                {Object.entries(PROVINCES)
+                  .filter(([code]) => code !== province)
+                  .map(([code, item]) => <option value={code} key={code}>{item.name}</option>)}
+              </select>
+            </label>
+            <label>
               Pay frequency
               <select value={frequency} onChange={(e) => setFrequency(Number(e.target.value))}>
                 {FREQUENCIES.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
@@ -216,6 +259,7 @@ export default function Home() {
               <div className="field-grid">
                 <MoneyField label="Federal TD1 · Total claim amount" value={federalClaim} onChange={setFederalClaim} hint="Line 13 on the 2026 federal TD1." />
                 <MoneyField label={`${PROVINCES[province].name} TD1 · Total claim`} value={provincialClaim} onChange={setProvincialClaim} hint="Total from your provincial or territorial TD1." />
+                <MoneyField label={`${PROVINCES[comparisonProvince].name} TD1 · Total claim`} value={comparisonClaim} onChange={setComparisonClaim} hint="Comparison province's personal claim total." />
                 <MoneyField label="Additional tax per pay" value={additionalTax} onChange={setAdditionalTax} hint="The extra amount requested on the TD1." />
               </div>
               <div className="checks">
@@ -235,26 +279,25 @@ export default function Home() {
         <aside className="results-panel" aria-live="polite">
           <div className="results-top">
             <div>
-              <span className="result-label">Estimated take-home</span>
-              <strong>{money.format(results.net)}</strong>
-              <small>per {FREQUENCIES.find((item) => item.value === frequency)?.label.toLowerCase()} pay</small>
-            </div>
-            <div className="rate-ring" style={{ "--rate": `${Math.min(results.effectiveRate * 100, 100)}%` } as React.CSSProperties}>
-              <span>{Math.round(results.effectiveRate * 100)}%</span>
-              <small>deducted</small>
+              <span className="result-label">Province comparison</span>
+              <h2>Same pay. Different province.</h2>
+              <small>Estimated per {FREQUENCIES.find((item) => item.value === frequency)?.label.toLowerCase()} pay</small>
             </div>
           </div>
 
-          <div className="pay-flow">
-            <div><span>Gross cash pay</span><b>{money.format(num(gross))}</b></div>
-            <div className="minus">−</div>
-            <div><span>Total deductions</span><b>{money.format(results.totalDeductions)}</b></div>
-            <div className="equals">=</div>
-            <div className="net-row"><span>Take-home pay</span><b>{money.format(results.net)}</b></div>
+          <div className="compare-cards">
+            <ComparisonCard code={province} result={results} label="Primary" />
+            <ComparisonCard code={comparisonProvince} result={comparison} label="Comparison" />
+          </div>
+
+          <div className="difference-banner">
+            <span>{netDifference === 0 ? "Equal take-home pay" : `${PROVINCES[comparisonWinner].name} comes out ahead`}</span>
+            <b>{netDifference === 0 ? money.format(0) : `${money.format(Math.abs(netDifference))} / pay`}</b>
+            <small>{netDifference === 0 ? "with these inputs" : `${money.format(Math.abs(netDifference) * frequency)} more annualized`}</small>
           </div>
 
           <div className="breakdown">
-            <div className="breakdown-title"><h3>Where it goes</h3><span>{money.format(results.totalDeductions)}</span></div>
+            <div className="breakdown-title"><h3>{PROVINCES[province].name} breakdown</h3><span>{money.format(results.totalDeductions)}</span></div>
             {rows.map((row) => (
               <div className="deduction-row" key={row.label}>
                 <div className="row-meta"><span><i className={row.tone} />{row.label}</span><b>{money.format(row.value)}</b></div>
@@ -298,6 +341,25 @@ function MoneyField({ label, value, onChange, hint }: { label: string; value: st
       <span className="money-input"><span>$</span><input inputMode="decimal" min="0" type="number" step="0.01" value={value} onChange={(e) => onChange(e.target.value)} /></span>
       {hint && <small className="hint">{hint}</small>}
     </label>
+  );
+}
+
+function ComparisonCard({ code, result, label }: { code: string; result: PayrollResult; label: string }) {
+  return (
+    <article className="compare-card">
+      <div className="compare-card-head">
+        <span>{label}</span>
+        <small>{Math.round(result.effectiveRate * 100)}% deducted</small>
+      </div>
+      <h3>{PROVINCES[code].name}</h3>
+      <strong>{money.format(result.net)}</strong>
+      <span className="take-home-label">take-home pay</span>
+      <dl>
+        <div><dt>Total deductions</dt><dd>{money.format(result.totalDeductions)}</dd></div>
+        <div><dt>Income tax</dt><dd>{money.format(result.federalTax + result.provincialTax)}</dd></div>
+        <div><dt>{code === "QC" ? "QPP, EI & QPIP" : "CPP & EI"}</dt><dd>{money.format(result.cpp + result.ei + result.qpip)}</dd></div>
+      </dl>
+    </article>
   );
 }
 

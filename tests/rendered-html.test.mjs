@@ -22,7 +22,9 @@ test("server-renders the Canadian payroll calculator", async () => {
   assert.match(html, /<title>Maple Pay/);
   assert.match(html, /Canada payroll estimator/);
   assert.match(html, /TD1 personal tax credits/);
-  assert.match(html, /Estimated take-home/);
+  assert.match(html, /Province comparison/);
+  assert.match(html, /Same pay\. Different province\./);
+  assert.match(html, /Compare with/);
   assert.match(html, /2026 rules/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });
