@@ -42,7 +42,7 @@ test("server-renders the Canada and UK payroll calculator", async () => {
 
 const toolPages = [
   ["/salary-rate", "Salary rate", "Regular pay basis"],
-  ["/vacation-pay", "Vacation pay", "Vacation pay treatment"],
+  ["/vacation-pay", "Vacation pay", "Subtract vacation pay already paid"],
   ["/overtime-pay", "Overtime pay", "Eligible overtime hours"],
   ["/final-pay", "Final pay", "Pay in lieu · weeks"],
 ];

@@ -44,6 +44,7 @@ type UKTaxBasis = "standard" | "basic" | "higher" | "advanced" | "top" | "none";
 type NICategory = "A" | "B" | "C" | "J";
 type PayBasis = "period" | "annual" | "hourly";
 type VacationMode = "none" | "eachPay" | "final";
+type VacationPaidMode = "none" | "amount" | "hours";
 type ToolPage = "salary" | "vacation" | "overtime" | "final";
 type EarningsBreakdown = {
   regular: number;
@@ -57,6 +58,8 @@ type EarningsBreakdown = {
   hourlyRate: number;
   weeklyRate: number;
   vacationRate: number;
+  vacationBeforePaid: number;
+  vacationPaidDeduction: number;
 };
 
 const FEDERAL: Bracket[] = [
@@ -253,7 +256,9 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
   const [yearsService, setYearsService] = useState("1");
   const [vacationMode, setVacationMode] = useState<VacationMode>(tool === "final" ? "final" : tool === "vacation" ? "eachPay" : "none");
   const [vacationEarnings, setVacationEarnings] = useState("0");
+  const [vacationPaidMode, setVacationPaidMode] = useState<VacationPaidMode>("none");
   const [vacationPaid, setVacationPaid] = useState("0");
+  const [vacationPaidHours, setVacationPaidHours] = useState("0");
   const [unusedHolidayDays, setUnusedHolidayDays] = useState("0");
   const [holidayDailyRate, setHolidayDailyRate] = useState("0");
   const [finalPay, setFinalPay] = useState(tool === "final");
@@ -300,13 +305,19 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
       ? canadaVacationRule.high
       : canadaVacationRule.low;
     const vacationRate = country === "CA" ? canadaVacationRate : .1207;
-    let vacation = 0;
-    if (vacationMode === "eachPay") vacation = (regular + overtime) * vacationRate;
+    let vacationBeforePaid = 0;
+    if (vacationMode === "eachPay") vacationBeforePaid = (regular + overtime) * vacationRate;
     if (vacationMode === "final") {
-      vacation = country === "CA"
-        ? Math.max(0, num(vacationEarnings) * vacationRate - num(vacationPaid))
+      vacationBeforePaid = country === "CA"
+        ? num(vacationEarnings) * vacationRate
         : num(unusedHolidayDays) * (num(holidayDailyRate) || derivedHourly * (hoursPerWeek / 5));
     }
+    const vacationPaidDeduction = vacationPaidMode === "amount"
+      ? num(vacationPaid)
+      : vacationPaidMode === "hours"
+        ? num(vacationPaidHours) * derivedHourly
+        : 0;
+    const vacation = Math.max(0, vacationBeforePaid - vacationPaidDeduction);
     const weeklyRate = payBasis === "annual"
       ? annual / 52
       : derivedHourly * hoursPerWeek;
@@ -327,8 +338,10 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
       hourlyRate: round(derivedHourly),
       weeklyRate: round(weeklyRate),
       vacationRate,
+      vacationBeforePaid: round(vacationBeforePaid),
+      vacationPaidDeduction: round(Math.min(vacationBeforePaid, vacationPaidDeduction)),
     };
-  }, [annualSalary, weeklyHours, regularHours, payBasis, hourlyRate, gross, frequency, country, ukOvertimeMultiplier, overtimeHours, province, yearsService, vacationMode, vacationEarnings, vacationPaid, unusedHolidayDays, holidayDailyRate, finalPay, noticeWeeks, terminationAmount]);
+  }, [annualSalary, weeklyHours, regularHours, payBasis, hourlyRate, gross, frequency, country, ukOvertimeMultiplier, overtimeHours, province, yearsService, vacationMode, vacationEarnings, vacationPaidMode, vacationPaid, vacationPaidHours, unusedHolidayDays, holidayDailyRate, finalPay, noticeWeeks, terminationAmount]);
 
   const payrollGross = calculationMode === "grossToNet" ? earnings.taxableGross : num(gross);
   const showOvertime = tool === "overtime";
@@ -545,7 +558,8 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
     setPayBasis("period"); setAnnualSalary("78000"); setHourlyRate("35"); setWeeklyHours("40"); setRegularHours("80");
     setOvertimeHours("0"); setUkOvertimeMultiplier("1"); setYearsService("1");
     setVacationMode(tool === "final" ? "final" : tool === "vacation" ? "eachPay" : "none");
-    setVacationEarnings("0"); setVacationPaid("0"); setUnusedHolidayDays("0"); setHolidayDailyRate("0"); setFinalPay(tool === "final");
+    setVacationEarnings("0"); setVacationPaidMode("none"); setVacationPaid("0"); setVacationPaidHours("0");
+    setUnusedHolidayDays("0"); setHolidayDailyRate("0"); setFinalPay(tool === "final");
     setNoticeWeeks("0"); setTerminationAmount("0");
   };
 
@@ -639,16 +653,41 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
                   </label>
                 )}
                 {showVacation && vacationMode === "final" && country === "CA" && (
-                  <>
-                    <MoneyField label="Vacation-eligible wages earned" value={vacationEarnings} onChange={setVacationEarnings} />
-                    <MoneyField label="Vacation pay already paid" value={vacationPaid} onChange={setVacationPaid} />
-                  </>
+                  <MoneyField label="Vacation-eligible wages earned" value={vacationEarnings} onChange={setVacationEarnings} />
                 )}
                 {showVacation && vacationMode === "final" && country === "UK" && (
                   <>
                     <MoneyField symbol="" label="Unused holiday days" value={unusedHolidayDays} onChange={setUnusedHolidayDays} hint="Payment in lieu is required for untaken statutory leave when employment ends." />
                     <MoneyField symbol="£" label="Average normal daily pay" value={holidayDailyRate} onChange={setHolidayDailyRate} hint="Enter normal pay including regularly paid overtime, commission or other required elements; leave 0 to use the derived basic day rate." />
                   </>
+                )}
+                {showVacation && vacationMode !== "none" && (
+                  <label>
+                    {country === "CA" ? "Subtract vacation pay already paid" : "Subtract holiday pay already paid"}
+                    <select value={vacationPaidMode} onChange={(e) => setVacationPaidMode(e.target.value as VacationPaidMode)}>
+                      <option value="none">Do not subtract anything</option>
+                      <option value="amount">{country === "CA" ? "Enter dollar value already paid" : "Enter pound value already paid"}</option>
+                      <option value="hours">Enter paid vacation / holiday hours</option>
+                    </select>
+                    <small className="hint">The deduction is capped at the calculated vacation or holiday amount, so the remaining payout cannot be negative.</small>
+                  </label>
+                )}
+                {showVacation && vacationMode !== "none" && vacationPaidMode === "amount" && (
+                  <MoneyField
+                    symbol={country === "CA" ? "$" : "£"}
+                    label={country === "CA" ? "Vacation value already paid" : "Holiday value already paid"}
+                    value={vacationPaid}
+                    onChange={setVacationPaid}
+                  />
+                )}
+                {showVacation && vacationMode !== "none" && vacationPaidMode === "hours" && (
+                  <MoneyField
+                    symbol=""
+                    label={country === "CA" ? "Vacation hours already paid" : "Holiday hours already paid"}
+                    value={vacationPaidHours}
+                    onChange={setVacationPaidHours}
+                    hint={`Converted using the derived hourly rate of ${(country === "CA" ? money : pounds).format(earnings.hourlyRate)}.`}
+                  />
                 )}
               </div>
 
@@ -662,7 +701,8 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
               <div className="earnings-summary">
                 <div><span>Regular</span><b>{(country === "CA" ? money : pounds).format(earnings.regular)}</b></div>
                 {showOvertime && <div><span>Overtime</span><b>{(country === "CA" ? money : pounds).format(earnings.overtime)}</b></div>}
-                {showVacation && <div><span>{country === "CA" ? "Vacation" : "Holiday"}</span><b>{(country === "CA" ? money : pounds).format(earnings.vacation)}</b></div>}
+                {showVacation && <div><span>{country === "CA" ? "Vacation" : "Holiday"}</span><b>{(country === "CA" ? money : pounds).format(earnings.vacationBeforePaid)}</b></div>}
+                {showVacation && earnings.vacationPaidDeduction > 0 && <div><span>Already paid</span><b>−{(country === "CA" ? money : pounds).format(earnings.vacationPaidDeduction)}</b></div>}
                 {showFinal && <div><span>Final-pay additions</span><b>{(country === "CA" ? money : pounds).format(earnings.notice + earnings.terminationTaxable + earnings.terminationTaxFree)}</b></div>}
                 <div className="earnings-total"><span>Total gross</span><b>{(country === "CA" ? money : pounds).format(earnings.totalGross)}</b></div>
               </div>
@@ -1000,7 +1040,10 @@ function EarningsCard({ earnings, format, vacationLabel, tool }: {
       <div className="earnings-card-head"><span>Gross earnings</span><b>{format.format(earnings.totalGross)}</b></div>
       <div><span>Regular pay</span><b>{format.format(earnings.regular)}</b></div>
       {tool === "overtime" && <div><span>Overtime pay</span><b>{format.format(earnings.overtime)}</b></div>}
-      {(tool === "vacation" || tool === "final") && <div><span>{vacationLabel}</span><b>{format.format(earnings.vacation)}</b></div>}
+      {(tool === "vacation" || tool === "final") && <div><span>{vacationLabel}</span><b>{format.format(earnings.vacationBeforePaid)}</b></div>}
+      {(tool === "vacation" || tool === "final") && earnings.vacationPaidDeduction > 0 && (
+        <div><span>Already paid</span><b>−{format.format(earnings.vacationPaidDeduction)}</b></div>
+      )}
       {tool === "final" && <div><span>Final-pay additions</span><b>{format.format(additions)}</b></div>}
       <small>Derived hourly rate: {format.format(earnings.hourlyRate)}</small>
     </div>
