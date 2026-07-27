@@ -45,6 +45,9 @@ type NICategory = "A" | "B" | "C" | "J";
 type PayBasis = "period" | "annual" | "hourly";
 type VacationMode = "none" | "eachPay" | "final";
 type VacationPaidMode = "none" | "amount" | "hours";
+type ServiceMode = "manual" | "dates";
+type VacationAccrualMode = "statutory" | "policyHours" | "policyDays" | "manualHours" | "manualValue";
+type FinalPayInputMode = "weeks" | "months" | "value";
 type ToolPage = "salary" | "vacation" | "overtime" | "final";
 type EarningsBreakdown = {
   regular: number;
@@ -104,6 +107,30 @@ const pounds = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GB
 const compactPounds = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
 const num = (value: string) => Math.max(0, Number(value) || 0);
 const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+const DAY_MS = 86_400_000;
+
+function utcDate(value: string) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return Date.UTC(year, month - 1, day);
+}
+
+function serviceYearsBetween(start: string, end: string) {
+  const startTime = utcDate(start);
+  const endTime = utcDate(end);
+  if (startTime === null || endTime === null || endTime < startTime) return 0;
+  return (endTime - startTime) / DAY_MS / 365.2425;
+}
+
+function vacationYearFraction(start: string, end: string) {
+  const startTime = utcDate(start);
+  const endTime = utcDate(end);
+  if (startTime === null || endTime === null || endTime < startTime) return 0;
+  const startDate = new Date(startTime);
+  const nextYear = Date.UTC(startDate.getUTCFullYear() + 1, startDate.getUTCMonth(), startDate.getUTCDate());
+  return Math.min(1, (endTime - startTime + DAY_MS) / Math.max(DAY_MS, nextYear - startTime));
+}
 
 const UK_REGIONS: Record<UKRegion, string> = {
   rUK: "England, Wales & N. Ireland",
@@ -254,15 +281,26 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
   const [overtimeHours, setOvertimeHours] = useState("0");
   const [ukOvertimeMultiplier, setUkOvertimeMultiplier] = useState("1");
   const [yearsService, setYearsService] = useState("1");
-  const [vacationMode, setVacationMode] = useState<VacationMode>(tool === "final" ? "final" : tool === "vacation" ? "eachPay" : "none");
+  const [serviceMode, setServiceMode] = useState<ServiceMode>("manual");
+  const [employmentStartDate, setEmploymentStartDate] = useState("");
+  const [lastEmploymentDate, setLastEmploymentDate] = useState("");
+  const [vacationMode, setVacationMode] = useState<VacationMode>(tool === "final" || tool === "vacation" ? "final" : "none");
+  const [vacationAccrualMode, setVacationAccrualMode] = useState<VacationAccrualMode>("statutory");
   const [vacationEarnings, setVacationEarnings] = useState("0");
+  const [vacationYearStartDate, setVacationYearStartDate] = useState("2026-01-01");
+  const [accrualThroughDate, setAccrualThroughDate] = useState("2026-12-31");
+  const [policyVacationUnits, setPolicyVacationUnits] = useState("80");
+  const [manualAccruedHours, setManualAccruedHours] = useState("0");
+  const [manualAccruedValue, setManualAccruedValue] = useState("0");
   const [vacationPaidMode, setVacationPaidMode] = useState<VacationPaidMode>("none");
   const [vacationPaid, setVacationPaid] = useState("0");
   const [vacationPaidHours, setVacationPaidHours] = useState("0");
   const [unusedHolidayDays, setUnusedHolidayDays] = useState("0");
   const [holidayDailyRate, setHolidayDailyRate] = useState("0");
   const [finalPay, setFinalPay] = useState(tool === "final");
+  const [noticeInputMode, setNoticeInputMode] = useState<FinalPayInputMode>("weeks");
   const [noticeWeeks, setNoticeWeeks] = useState("0");
+  const [severanceInputMode, setSeveranceInputMode] = useState<FinalPayInputMode>("value");
   const [terminationAmount, setTerminationAmount] = useState("0");
 
   const chooseProvince = (code: string) => {
@@ -284,6 +322,9 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
     if (nextCountry === "UK" && frequency === 24) setFrequency(12);
   };
 
+  const calculatedServiceYears = serviceYearsBetween(employmentStartDate, lastEmploymentDate);
+  const effectiveYearsService = serviceMode === "dates" ? calculatedServiceYears : num(yearsService);
+
   const earnings = useMemo<EarningsBreakdown>(() => {
     const annual = num(annualSalary);
     const hoursPerWeek = Math.max(1, num(weeklyHours));
@@ -301,16 +342,24 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
     const overtimeMultiplier = country === "CA" ? 1.5 : Math.max(0, num(ukOvertimeMultiplier));
     const overtime = derivedHourly * num(overtimeHours) * overtimeMultiplier;
     const canadaVacationRule = VACATION_RULES[province];
-    const canadaVacationRate = num(yearsService) >= canadaVacationRule.threshold
+    const canadaVacationRate = effectiveYearsService >= canadaVacationRule.threshold
       ? canadaVacationRule.high
       : canadaVacationRule.low;
     const vacationRate = country === "CA" ? canadaVacationRate : .1207;
+    const dailyRate = num(holidayDailyRate) || derivedHourly * (hoursPerWeek / 5);
+    const accrualFraction = vacationYearFraction(vacationYearStartDate, accrualThroughDate);
     let vacationBeforePaid = 0;
     if (vacationMode === "eachPay") vacationBeforePaid = (regular + overtime) * vacationRate;
     if (vacationMode === "final") {
-      vacationBeforePaid = country === "CA"
-        ? num(vacationEarnings) * vacationRate
-        : num(unusedHolidayDays) * (num(holidayDailyRate) || derivedHourly * (hoursPerWeek / 5));
+      if (vacationAccrualMode === "policyHours") vacationBeforePaid = num(policyVacationUnits) * accrualFraction * derivedHourly;
+      else if (vacationAccrualMode === "policyDays") vacationBeforePaid = num(policyVacationUnits) * accrualFraction * dailyRate;
+      else if (vacationAccrualMode === "manualHours") vacationBeforePaid = num(manualAccruedHours) * derivedHourly;
+      else if (vacationAccrualMode === "manualValue") vacationBeforePaid = num(manualAccruedValue);
+      else {
+        vacationBeforePaid = country === "CA"
+          ? num(vacationEarnings) * vacationRate
+          : num(unusedHolidayDays) * dailyRate;
+      }
     }
     const vacationPaidDeduction = vacationPaidMode === "amount"
       ? num(vacationPaid)
@@ -321,8 +370,14 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
     const weeklyRate = payBasis === "annual"
       ? annual / 52
       : derivedHourly * hoursPerWeek;
-    const notice = finalPay ? weeklyRate * num(noticeWeeks) : 0;
-    const termination = finalPay ? num(terminationAmount) : 0;
+    const monthlyRate = weeklyRate * 52 / 12;
+    const finalPayValue = (mode: FinalPayInputMode, value: string) => mode === "weeks"
+      ? weeklyRate * num(value)
+      : mode === "months"
+        ? monthlyRate * num(value)
+        : num(value);
+    const notice = finalPay ? finalPayValue(noticeInputMode, noticeWeeks) : 0;
+    const termination = finalPay ? finalPayValue(severanceInputMode, terminationAmount) : 0;
     const terminationTaxFree = country === "UK" ? Math.min(30_000, termination) : 0;
     const terminationTaxable = country === "UK" ? Math.max(0, termination - 30_000) : termination;
     const taxableGross = round(regular + overtime + vacation + notice + terminationTaxable);
@@ -341,7 +396,7 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
       vacationBeforePaid: round(vacationBeforePaid),
       vacationPaidDeduction: round(Math.min(vacationBeforePaid, vacationPaidDeduction)),
     };
-  }, [annualSalary, weeklyHours, regularHours, payBasis, hourlyRate, gross, frequency, country, ukOvertimeMultiplier, overtimeHours, province, yearsService, vacationMode, vacationEarnings, vacationPaidMode, vacationPaid, vacationPaidHours, unusedHolidayDays, holidayDailyRate, finalPay, noticeWeeks, terminationAmount]);
+  }, [annualSalary, weeklyHours, regularHours, payBasis, hourlyRate, gross, frequency, country, ukOvertimeMultiplier, overtimeHours, province, effectiveYearsService, vacationMode, vacationAccrualMode, vacationEarnings, vacationYearStartDate, accrualThroughDate, policyVacationUnits, manualAccruedHours, manualAccruedValue, vacationPaidMode, vacationPaid, vacationPaidHours, unusedHolidayDays, holidayDailyRate, finalPay, noticeInputMode, noticeWeeks, severanceInputMode, terminationAmount]);
 
   const payrollGross = calculationMode === "grossToNet" ? earnings.taxableGross : num(gross);
   const showOvertime = tool === "overtime";
@@ -556,11 +611,14 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
     setUkRegion("rUK"); setUkComparisonRegion("SCT"); setUkTaxBasis("standard"); setNiCategory("A");
     setStudentLoanPlan("none"); setPostgraduateLoan(false); setSalarySacrifice("0");
     setPayBasis("period"); setAnnualSalary("78000"); setHourlyRate("35"); setWeeklyHours("40"); setRegularHours("80");
-    setOvertimeHours("0"); setUkOvertimeMultiplier("1"); setYearsService("1");
-    setVacationMode(tool === "final" ? "final" : tool === "vacation" ? "eachPay" : "none");
-    setVacationEarnings("0"); setVacationPaidMode("none"); setVacationPaid("0"); setVacationPaidHours("0");
+    setOvertimeHours("0"); setUkOvertimeMultiplier("1"); setYearsService("1"); setServiceMode("manual");
+    setEmploymentStartDate(""); setLastEmploymentDate("");
+    setVacationMode(tool === "final" || tool === "vacation" ? "final" : "none");
+    setVacationAccrualMode("statutory"); setVacationEarnings("0"); setVacationYearStartDate("2026-01-01");
+    setAccrualThroughDate("2026-12-31"); setPolicyVacationUnits("80"); setManualAccruedHours("0"); setManualAccruedValue("0");
+    setVacationPaidMode("none"); setVacationPaid("0"); setVacationPaidHours("0");
     setUnusedHolidayDays("0"); setHolidayDailyRate("0"); setFinalPay(tool === "final");
-    setNoticeWeeks("0"); setTerminationAmount("0");
+    setNoticeInputMode("weeks"); setNoticeWeeks("0"); setSeveranceInputMode("value"); setTerminationAmount("0");
   };
 
   return (
@@ -640,7 +698,29 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
                     </select>
                   </label>
                 )}
-                {showVacation && <MoneyField symbol="" label="Completed years of service" value={yearsService} onChange={setYearsService} />}
+                {showVacation && (
+                  <label>
+                    Years of service
+                    <select value={serviceMode} onChange={(e) => setServiceMode(e.target.value as ServiceMode)}>
+                      <option value="manual">Enter completed years manually</option>
+                      <option value="dates">Calculate from start and last dates</option>
+                    </select>
+                  </label>
+                )}
+                {showVacation && serviceMode === "manual" && (
+                  <MoneyField symbol="" label="Completed years of service" value={yearsService} onChange={setYearsService} />
+                )}
+                {showVacation && serviceMode === "dates" && (
+                  <>
+                    <DateField label="Employment start date" value={employmentStartDate} onChange={setEmploymentStartDate} />
+                    <DateField label="Last date of employment" value={lastEmploymentDate} onChange={setLastEmploymentDate} />
+                    <div className="calculated-value" role="status">
+                      <span>Calculated service</span>
+                      <b>{calculatedServiceYears.toFixed(2)} years</b>
+                      <small>Vacation thresholds use completed service as of the last date.</small>
+                    </div>
+                  </>
+                )}
                 {showVacation && (
                   <label>
                     {country === "CA" ? "Vacation pay treatment" : "Holiday pay treatment"}
@@ -652,14 +732,60 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
                     <small className="hint">{country === "CA" ? VACATION_RULES[province].label : "Regular workers receive 5.6 weeks; 12.07% rolled-up pay is limited to eligible irregular/part-year workers."}</small>
                   </label>
                 )}
-                {showVacation && vacationMode === "final" && country === "CA" && (
+                {showVacation && vacationMode === "final" && (
+                  <label>
+                    Accrued {country === "CA" ? "vacation" : "holiday"} calculation
+                    <select value={vacationAccrualMode} onChange={(e) => setVacationAccrualMode(e.target.value as VacationAccrualMode)}>
+                      <option value="statutory">{country === "CA" ? "Statutory percentage of eligible wages" : "Unused days × normal daily pay"}</option>
+                      <option value="policyHours">Policy hours per vacation year</option>
+                      <option value="policyDays">Policy days per vacation year</option>
+                      <option value="manualHours">Enter accrued hours manually</option>
+                      <option value="manualValue">Enter accrued value manually</option>
+                    </select>
+                  </label>
+                )}
+                {showVacation && vacationMode === "final" && vacationAccrualMode === "statutory" && country === "CA" && (
                   <MoneyField label="Vacation-eligible wages earned" value={vacationEarnings} onChange={setVacationEarnings} />
                 )}
-                {showVacation && vacationMode === "final" && country === "UK" && (
+                {showVacation && vacationMode === "final" && vacationAccrualMode === "statutory" && country === "UK" && (
                   <>
                     <MoneyField symbol="" label="Unused holiday days" value={unusedHolidayDays} onChange={setUnusedHolidayDays} hint="Payment in lieu is required for untaken statutory leave when employment ends." />
                     <MoneyField symbol="£" label="Average normal daily pay" value={holidayDailyRate} onChange={setHolidayDailyRate} hint="Enter normal pay including regularly paid overtime, commission or other required elements; leave 0 to use the derived basic day rate." />
                   </>
+                )}
+                {showVacation && vacationMode === "final" && (vacationAccrualMode === "policyHours" || vacationAccrualMode === "policyDays") && (
+                  <>
+                    <MoneyField
+                      symbol=""
+                      label={`Policy ${vacationAccrualMode === "policyHours" ? "hours" : "days"} per vacation year`}
+                      value={policyVacationUnits}
+                      onChange={setPolicyVacationUnits}
+                    />
+                    <DateField label="Vacation year start date" value={vacationYearStartDate} onChange={setVacationYearStartDate} />
+                    <DateField label="Accrual through date" value={accrualThroughDate} onChange={setAccrualThroughDate} />
+                    <div className="calculated-value" role="status">
+                      <span>Vacation year accrued</span>
+                      <b>{(vacationYearFraction(vacationYearStartDate, accrualThroughDate) * 100).toFixed(1)}%</b>
+                      <small>Policy entitlement is prorated through the selected date and capped at one vacation year.</small>
+                    </div>
+                  </>
+                )}
+                {showVacation && vacationMode === "final" && vacationAccrualMode === "manualHours" && (
+                  <MoneyField
+                    symbol=""
+                    label={`Accrued ${country === "CA" ? "vacation" : "holiday"} hours`}
+                    value={manualAccruedHours}
+                    onChange={setManualAccruedHours}
+                    hint={`Converted using the derived hourly rate of ${(country === "CA" ? money : pounds).format(earnings.hourlyRate)}.`}
+                  />
+                )}
+                {showVacation && vacationMode === "final" && vacationAccrualMode === "manualValue" && (
+                  <MoneyField
+                    symbol={country === "CA" ? "$" : "£"}
+                    label={`Accrued ${country === "CA" ? "vacation" : "holiday"} value`}
+                    value={manualAccruedValue}
+                    onChange={setManualAccruedValue}
+                  />
                 )}
                 {showVacation && vacationMode !== "none" && (
                   <label>
@@ -693,8 +819,40 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
 
               {showFinal && (
                 <div className="field-grid final-fields">
-                  <MoneyField symbol="" label="Pay in lieu · weeks" value={noticeWeeks} onChange={setNoticeWeeks} hint={country === "UK" ? "UK statutory notice is generally 1 week after one month, then 1 week per completed year from 2 to 12 years." : "Enter the applicable statutory, contractual or common-law notice period."} />
-                  <MoneyField symbol={country === "CA" ? "$" : "£"} label={country === "CA" ? "Severance / other taxable termination pay" : "Redundancy / termination award"} value={terminationAmount} onChange={setTerminationAmount} hint={country === "UK" ? "The calculator treats up to £30,000 as tax-free; PAYE treatment can vary by payment type." : "Included as taxable employment income for this estimate."} />
+                  <label>
+                    Notice pay input
+                    <select value={noticeInputMode} onChange={(e) => setNoticeInputMode(e.target.value as FinalPayInputMode)}>
+                      <option value="weeks">Weeks of notice</option>
+                      <option value="months">Months of notice</option>
+                      <option value="value">Enter notice value</option>
+                    </select>
+                  </label>
+                  <MoneyField
+                    symbol={noticeInputMode === "value" ? (country === "CA" ? "$" : "£") : ""}
+                    label={noticeInputMode === "weeks" ? "Notice · weeks" : noticeInputMode === "months" ? "Notice · months" : "Notice pay value"}
+                    value={noticeWeeks}
+                    onChange={setNoticeWeeks}
+                    hint={country === "UK" ? "UK statutory notice is generally 1 week after one month, then 1 week per completed year from 2 to 12 years." : "Enter the applicable statutory, contractual or common-law notice entitlement."}
+                  />
+                  <label>
+                    {country === "CA" ? "Severance input" : "Redundancy / termination input"}
+                    <select value={severanceInputMode} onChange={(e) => setSeveranceInputMode(e.target.value as FinalPayInputMode)}>
+                      <option value="weeks">Weeks of pay</option>
+                      <option value="months">Months of pay</option>
+                      <option value="value">Enter direct value</option>
+                    </select>
+                  </label>
+                  <MoneyField
+                    symbol={severanceInputMode === "value" ? (country === "CA" ? "$" : "£") : ""}
+                    label={severanceInputMode === "weeks"
+                      ? (country === "CA" ? "Severance · weeks" : "Redundancy / termination · weeks")
+                      : severanceInputMode === "months"
+                        ? (country === "CA" ? "Severance · months" : "Redundancy / termination · months")
+                        : (country === "CA" ? "Severance value" : "Redundancy / termination value")}
+                    value={terminationAmount}
+                    onChange={setTerminationAmount}
+                    hint={country === "UK" ? "The calculator treats up to £30,000 of this estimate as tax-free; PAYE treatment can vary by payment type." : "Included as taxable employment income for this estimate."}
+                  />
                 </div>
               )}
 
@@ -703,7 +861,8 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
                 {showOvertime && <div><span>Overtime</span><b>{(country === "CA" ? money : pounds).format(earnings.overtime)}</b></div>}
                 {showVacation && <div><span>{country === "CA" ? "Vacation" : "Holiday"}</span><b>{(country === "CA" ? money : pounds).format(earnings.vacationBeforePaid)}</b></div>}
                 {showVacation && earnings.vacationPaidDeduction > 0 && <div><span>Already paid</span><b>−{(country === "CA" ? money : pounds).format(earnings.vacationPaidDeduction)}</b></div>}
-                {showFinal && <div><span>Final-pay additions</span><b>{(country === "CA" ? money : pounds).format(earnings.notice + earnings.terminationTaxable + earnings.terminationTaxFree)}</b></div>}
+                {showFinal && <div><span>Notice pay</span><b>{(country === "CA" ? money : pounds).format(earnings.notice)}</b></div>}
+                {showFinal && <div><span>{country === "CA" ? "Severance" : "Redundancy / termination"}</span><b>{(country === "CA" ? money : pounds).format(earnings.terminationTaxable + earnings.terminationTaxFree)}</b></div>}
                 <div className="earnings-total"><span>Total gross</span><b>{(country === "CA" ? money : pounds).format(earnings.totalGross)}</b></div>
               </div>
               <p className="legal-hint">
@@ -977,6 +1136,16 @@ function MoneyField({ label, value, onChange, hint, symbol = "$" }: { label: str
   );
 }
 
+function DateField({ label, value, onChange, hint }: { label: string; value: string; onChange: (value: string) => void; hint?: string }) {
+  return (
+    <label>
+      {label}
+      <input className="date-input" type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+      {hint && <small className="hint">{hint}</small>}
+    </label>
+  );
+}
+
 function FrequencyField({ frequency, setFrequency, options }: { frequency: number; setFrequency: (value: number) => void; options: typeof FREQUENCIES }) {
   return (
     <label>
@@ -1034,7 +1203,6 @@ function EarningsCard({ earnings, format, vacationLabel, tool }: {
   vacationLabel: string;
   tool: ToolPage;
 }) {
-  const additions = earnings.notice + earnings.terminationTaxable + earnings.terminationTaxFree;
   return (
     <div className="earnings-card">
       <div className="earnings-card-head"><span>Gross earnings</span><b>{format.format(earnings.totalGross)}</b></div>
@@ -1044,7 +1212,8 @@ function EarningsCard({ earnings, format, vacationLabel, tool }: {
       {(tool === "vacation" || tool === "final") && earnings.vacationPaidDeduction > 0 && (
         <div><span>Already paid</span><b>−{format.format(earnings.vacationPaidDeduction)}</b></div>
       )}
-      {tool === "final" && <div><span>Final-pay additions</span><b>{format.format(additions)}</b></div>}
+      {tool === "final" && <div><span>Notice pay</span><b>{format.format(earnings.notice)}</b></div>}
+      {tool === "final" && <div><span>Severance / termination</span><b>{format.format(earnings.terminationTaxable + earnings.terminationTaxFree)}</b></div>}
       <small>Derived hourly rate: {format.format(earnings.hourlyRate)}</small>
     </div>
   );

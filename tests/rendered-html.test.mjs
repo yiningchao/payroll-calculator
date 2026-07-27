@@ -44,7 +44,7 @@ const toolPages = [
   ["/salary-rate", "Salary rate", "Regular pay basis"],
   ["/vacation-pay", "Vacation pay", "Subtract vacation pay already paid"],
   ["/overtime-pay", "Overtime pay", "Eligible overtime hours"],
-  ["/final-pay", "Final pay", "Pay in lieu · weeks"],
+  ["/final-pay", "Final pay", "Notice pay input"],
 ];
 
 for (const [pathname, label, field] of toolPages) {
@@ -57,3 +57,26 @@ for (const [pathname, label, field] of toolPages) {
     assert.match(html, /aria-label="Payroll calculators"/);
   });
 }
+
+test("vacation and final pay expose service and accrual options", async () => {
+  for (const pathname of ["/vacation-pay", "/final-pay"]) {
+    const response = await render(pathname);
+    const html = await response.text();
+    assert.match(html, /Calculate from start and last dates/);
+    assert.match(html, /Policy hours per vacation year/);
+    assert.match(html, /Policy days per vacation year/);
+    assert.match(html, /Enter accrued hours manually/);
+    assert.match(html, /Enter accrued value manually/);
+  }
+});
+
+test("final pay exposes notice and severance units", async () => {
+  const response = await render("/final-pay");
+  const html = await response.text();
+  assert.match(html, /Weeks of notice/);
+  assert.match(html, /Months of notice/);
+  assert.match(html, /Enter notice value/);
+  assert.match(html, /Weeks of pay/);
+  assert.match(html, /Months of pay/);
+  assert.match(html, /Enter direct value/);
+});
