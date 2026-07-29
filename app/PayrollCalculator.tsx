@@ -250,16 +250,16 @@ function ukStudentLoanThreshold(plan: string, frequency: number) {
 export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage }) {
   const [country, setCountry] = useState<"CA" | "UK">("CA");
   const [calculationMode, setCalculationMode] = useState<"grossToNet" | "netToGross">("grossToNet");
-  const [province, setProvince] = useState("AB");
+  const [province, setProvince] = useState("BC");
   const [comparisonProvince, setComparisonProvince] = useState("ON");
-  const [frequency, setFrequency] = useState(26);
+  const [frequency, setFrequency] = useState(24);
   const [gross, setGross] = useState("3000");
   const [targetNet, setTargetNet] = useState("2300");
   const [benefits, setBenefits] = useState("0");
   const [rrsp, setRrsp] = useState("0");
   const [otherDeductions, setOtherDeductions] = useState("0");
   const [federalClaim, setFederalClaim] = useState("16452");
-  const [provincialClaim, setProvincialClaim] = useState(String(PROVINCES.AB.claim));
+  const [provincialClaim, setProvincialClaim] = useState(String(PROVINCES.BC.claim));
   const [comparisonClaim, setComparisonClaim] = useState(String(PROVINCES.ON.claim));
   const [additionalTax, setAdditionalTax] = useState("0");
   const [multipleEmployers, setMultipleEmployers] = useState(false);
@@ -273,11 +273,10 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
   const [studentLoanPlan, setStudentLoanPlan] = useState("none");
   const [postgraduateLoan, setPostgraduateLoan] = useState(false);
   const [salarySacrifice, setSalarySacrifice] = useState("0");
-  const [payBasis, setPayBasis] = useState<PayBasis>("period");
+  const [payBasis, setPayBasis] = useState<PayBasis>("annual");
   const [annualSalary, setAnnualSalary] = useState("78000");
   const [hourlyRate, setHourlyRate] = useState("35");
   const [weeklyHours, setWeeklyHours] = useState("40");
-  const [regularHours, setRegularHours] = useState("80");
   const [overtimeHours, setOvertimeHours] = useState("0");
   const [ukOvertimeMultiplier, setUkOvertimeMultiplier] = useState("1");
   const [yearsService, setYearsService] = useState("1");
@@ -285,11 +284,11 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
   const [employmentStartDate, setEmploymentStartDate] = useState("");
   const [lastEmploymentDate, setLastEmploymentDate] = useState("");
   const [vacationMode, setVacationMode] = useState<VacationMode>(tool === "final" || tool === "vacation" ? "final" : "none");
-  const [vacationAccrualMode, setVacationAccrualMode] = useState<VacationAccrualMode>("statutory");
+  const [vacationAccrualMode, setVacationAccrualMode] = useState<VacationAccrualMode>("policyDays");
   const [vacationEarnings, setVacationEarnings] = useState("0");
   const [vacationYearStartDate, setVacationYearStartDate] = useState("2026-01-01");
   const [accrualThroughDate, setAccrualThroughDate] = useState("2026-12-31");
-  const [policyVacationUnits, setPolicyVacationUnits] = useState("80");
+  const [policyVacationUnits, setPolicyVacationUnits] = useState("10");
   const [manualAccruedHours, setManualAccruedHours] = useState("0");
   const [manualAccruedValue, setManualAccruedValue] = useState("0");
   const [vacationPaidMode, setVacationPaidMode] = useState<VacationPaidMode>("none");
@@ -319,16 +318,29 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
 
   const switchCountry = (nextCountry: "CA" | "UK") => {
     setCountry(nextCountry);
-    if (nextCountry === "UK" && frequency === 24) setFrequency(12);
+    setPayBasis("annual");
+    setVacationAccrualMode("policyDays");
+    if (nextCountry === "CA") {
+      setFrequency(24);
+      setProvince("BC");
+      setComparisonProvince("ON");
+      setProvincialClaim(String(PROVINCES.BC.claim));
+      setComparisonClaim(String(PROVINCES.ON.claim));
+      setPolicyVacationUnits("10");
+    } else {
+      setFrequency(12);
+      setPolicyVacationUnits("20");
+    }
   };
 
   const calculatedServiceYears = serviceYearsBetween(employmentStartDate, lastEmploymentDate);
   const effectiveYearsService = serviceMode === "dates" ? calculatedServiceYears : num(yearsService);
+  const regularHoursThisPay = num(weeklyHours) * 52 / frequency;
 
   const earnings = useMemo<EarningsBreakdown>(() => {
     const annual = num(annualSalary);
     const hoursPerWeek = Math.max(1, num(weeklyHours));
-    const hoursThisPay = num(regularHours);
+    const hoursThisPay = regularHoursThisPay;
     const derivedHourly = payBasis === "annual"
       ? annual / (hoursPerWeek * 52)
       : payBasis === "hourly"
@@ -396,7 +408,7 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
       vacationBeforePaid: round(vacationBeforePaid),
       vacationPaidDeduction: round(Math.min(vacationBeforePaid, vacationPaidDeduction)),
     };
-  }, [annualSalary, weeklyHours, regularHours, payBasis, hourlyRate, gross, frequency, country, ukOvertimeMultiplier, overtimeHours, province, effectiveYearsService, vacationMode, vacationAccrualMode, vacationEarnings, vacationYearStartDate, accrualThroughDate, policyVacationUnits, manualAccruedHours, manualAccruedValue, vacationPaidMode, vacationPaid, vacationPaidHours, unusedHolidayDays, holidayDailyRate, finalPay, noticeInputMode, noticeWeeks, severanceInputMode, terminationAmount]);
+  }, [annualSalary, weeklyHours, regularHoursThisPay, payBasis, hourlyRate, gross, frequency, country, ukOvertimeMultiplier, overtimeHours, province, effectiveYearsService, vacationMode, vacationAccrualMode, vacationEarnings, vacationYearStartDate, accrualThroughDate, policyVacationUnits, manualAccruedHours, manualAccruedValue, vacationPaidMode, vacationPaid, vacationPaidHours, unusedHolidayDays, holidayDailyRate, finalPay, noticeInputMode, noticeWeeks, severanceInputMode, terminationAmount]);
 
   const payrollGross = calculationMode === "grossToNet" ? earnings.taxableGross : num(gross);
   const showOvertime = tool === "overtime";
@@ -604,18 +616,18 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
   ];
 
   const reset = () => {
-    setCalculationMode("grossToNet"); setProvince("AB"); setComparisonProvince("ON"); setFrequency(26); setGross("3000"); setTargetNet("2300"); setBenefits("0"); setRrsp("0");
-    setOtherDeductions("0"); setFederalClaim("16452"); setProvincialClaim("22769");
+    setCalculationMode("grossToNet"); setProvince("BC"); setComparisonProvince("ON"); setFrequency(country === "CA" ? 24 : 12); setGross("3000"); setTargetNet("2300"); setBenefits("0"); setRrsp("0");
+    setOtherDeductions("0"); setFederalClaim("16452"); setProvincialClaim(String(PROVINCES.BC.claim));
     setComparisonClaim("12989");
     setAdditionalTax("0"); setMultipleEmployers(false); setCppExempt(false); setEiExempt(false);
     setUkRegion("rUK"); setUkComparisonRegion("SCT"); setUkTaxBasis("standard"); setNiCategory("A");
     setStudentLoanPlan("none"); setPostgraduateLoan(false); setSalarySacrifice("0");
-    setPayBasis("period"); setAnnualSalary("78000"); setHourlyRate("35"); setWeeklyHours("40"); setRegularHours("80");
+    setPayBasis("annual"); setAnnualSalary("78000"); setHourlyRate("35"); setWeeklyHours("40");
     setOvertimeHours("0"); setUkOvertimeMultiplier("1"); setYearsService("1"); setServiceMode("manual");
     setEmploymentStartDate(""); setLastEmploymentDate("");
     setVacationMode(tool === "final" || tool === "vacation" ? "final" : "none");
-    setVacationAccrualMode("statutory"); setVacationEarnings("0"); setVacationYearStartDate("2026-01-01");
-    setAccrualThroughDate("2026-12-31"); setPolicyVacationUnits("80"); setManualAccruedHours("0"); setManualAccruedValue("0");
+    setVacationAccrualMode("policyDays"); setVacationEarnings("0"); setVacationYearStartDate("2026-01-01");
+    setAccrualThroughDate("2026-12-31"); setPolicyVacationUnits(country === "CA" ? "10" : "20"); setManualAccruedHours("0"); setManualAccruedValue("0");
     setVacationPaidMode("none"); setVacationPaid("0"); setVacationPaidHours("0");
     setUnusedHolidayDays("0"); setHolidayDailyRate("0"); setFinalPay(tool === "final");
     setNoticeInputMode("weeks"); setNoticeWeeks("0"); setSeveranceInputMode("value"); setTerminationAmount("0");
@@ -685,7 +697,11 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
                 {payBasis === "hourly" && <MoneyField symbol={country === "CA" ? "$" : "£"} label="Hourly rate" value={hourlyRate} onChange={setHourlyRate} />}
                 {payBasis === "period" && <MoneyField symbol={country === "CA" ? "$" : "£"} label="Regular pay this period" value={gross} onChange={setGross} />}
                 <MoneyField symbol="" label="Contracted hours per week" value={weeklyHours} onChange={setWeeklyHours} />
-                {payBasis !== "annual" && <MoneyField symbol="" label="Regular hours this pay" value={regularHours} onChange={setRegularHours} />}
+                <div className="calculated-value" role="status">
+                  <span>Regular hours this pay</span>
+                  <b>{regularHoursThisPay.toFixed(2)} hours</b>
+                  <small>{num(weeklyHours).toFixed(2)} weekly hours × 52 ÷ {frequency} pay periods</small>
+                </div>
                 {showOvertime && <MoneyField symbol="" label="Eligible overtime hours" value={overtimeHours} onChange={setOvertimeHours} hint={country === "CA" ? "Enter only hours that qualify under local rules; most eligible overtime is paid at 1.5×." : "UK overtime rates come from the contract; there is no general statutory premium."} />}
                 {showOvertime && country === "UK" && (
                   <label>

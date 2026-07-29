@@ -80,3 +80,23 @@ test("final pay exposes notice and severance units", async () => {
   assert.match(html, /Months of pay/);
   assert.match(html, /Enter direct value/);
 });
+
+test("Canada pages use the requested salary and scheduling defaults", async () => {
+  for (const pathname of ["/", "/salary-rate", "/vacation-pay", "/overtime-pay", "/final-pay"]) {
+    const response = await render(pathname);
+    const html = await response.text();
+    assert.match(html, /Annual salary/);
+    assert.match(html, /86\.67(?:<!-- -->)? hours/);
+    assert.match(html, /<option value="24" selected="">Semi-monthly<\/option>/);
+    assert.match(html, /<option value="BC" selected="">British Columbia<\/option>/);
+  }
+});
+
+test("Canada vacation pages default to 10 policy days", async () => {
+  for (const pathname of ["/vacation-pay", "/final-pay"]) {
+    const response = await render(pathname);
+    const html = await response.text();
+    assert.match(html, /Policy days per vacation year/);
+    assert.match(html, /Policy days per vacation year[\s\S]{0,300}value="10"/);
+  }
+});
