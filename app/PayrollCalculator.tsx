@@ -247,7 +247,7 @@ function ukStudentLoanThreshold(plan: string, frequency: number) {
   return ukPeriodThreshold(frequency, weekly, monthly);
 }
 
-export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage }) {
+export default function PayrollCalculator({ tool = "salary", basePath = "" }: { tool?: ToolPage; basePath?: string }) {
   const [country, setCountry] = useState<"CA" | "UK">("CA");
   const [calculationMode, setCalculationMode] = useState<"grossToNet" | "netToGross">("grossToNet");
   const [province, setProvince] = useState("BC");
@@ -646,7 +646,7 @@ export default function PayrollCalculator({ tool = "salary" }: { tool?: ToolPage
 
       <nav className="tool-nav" aria-label="Payroll calculators">
         {(Object.entries(TOOL_PAGES) as [ToolPage, (typeof TOOL_PAGES)[ToolPage]][]).map(([key, item]) => (
-          <a key={key} href={item.href} className={tool === key ? "active" : ""} aria-current={tool === key ? "page" : undefined}>
+          <a key={key} href={`${basePath}${item.href}`} className={tool === key ? "active" : ""} aria-current={tool === key ? "page" : undefined}>
             <span>{item.label}</span>
             <small>{key === "salary" ? "Annual · hourly" : key === "vacation" ? "Leave · payout" : key === "overtime" ? "Hours · premium" : "Notice · termination"}</small>
           </a>
